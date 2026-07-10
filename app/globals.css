@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #07111f;
+  color: #e8f1ff;
+}
+
+textarea,
+input,
+select {
+  color-scheme: dark;
+}
+
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-guard-cyan/70 focus:ring-offset-2 focus:ring-offset-guard-bg;
+}
