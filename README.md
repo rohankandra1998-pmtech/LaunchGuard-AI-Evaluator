@@ -1,45 +1,39 @@
 # LaunchGuard AI Evaluator
 
-LaunchGuard is a human evaluation workspace for AI product builders. It helps teams create AI projects, version prompts, define Playground-style variables, build golden datasets, run AI outputs, manually review failures, summarize human notes, and draft improved prompt versions before launch.
+LaunchGuard is an open, collaborative workspace for testing and improving AI prompts through structured evaluation. Visitors can browse public workspaces, create AI projects, version prompts, define criteria, build golden datasets, run AI outputs, complete human reviews, analyze failures, draft improved prompts, and export evaluation data without creating an account.
 
-## MVP Scope
+## Public Prototype Model
 
-This first version focuses on the human eval workflow:
+The product is organized as:
 
-1. Sign up and log in with Supabase email/password auth.
-2. Create an AI project with variables and an initial system prompt.
-3. Automatically create Prompt Version 1.
-4. Define or generate evaluation criteria.
-5. Build a golden dataset manually or with GPT-5 starter cases.
-6. Run GPT-4.1 or GPT-5 outputs server-side.
-7. Score every generated output with Good, Average, or Bad ratings per criterion.
-8. View results dashboards and failure distributions.
-9. Generate GPT-5 error analysis and prompt vNext drafts.
-10. Export project dataset and human review data as CSV.
+1. Public workspace directory.
+2. Individual public workspace.
+3. AI evaluation projects inside each workspace.
+4. Prompt versions, criteria, golden datasets, generated outputs, human review, results, reports, and CSV export inside each project.
 
-LLM-as-a-judge is intentionally left for v2, but the database and route structure keep generated outputs, human reviews, and future judge runs separate.
+This prototype has no authentication, ownership roles, invitations, private workspaces, request quotas, or usage caps. All workspaces and project data are publicly readable and publicly editable through the publishable Supabase key.
+
+> Do not store sensitive, confidential, personal, regulated, or production-secret information in this prototype.
 
 ## Tech Stack
 
-- Next.js App Router
-- React
-- TypeScript
+- Next.js App Router, React, and TypeScript
 - Tailwind CSS
-- Supabase Auth and Postgres
-- `@supabase/ssr` cookie-based auth
-- OpenAI API, called only from server route handlers
+- Supabase Postgres with public RLS policies
+- OpenAI API calls in server route handlers only
+- Zod-validated structured outputs
 - Vercel-ready deployment
 
 ## Model Strategy
 
-- Product output generation defaults to `OPENAI_PRODUCT_MODEL`, defaulting to `gpt-4.1`.
-- Higher-reasoning assistant features use `OPENAI_REASONING_MODEL`, defaulting to `gpt-5`.
-- No other model names are used in application logic.
-- Structured AI helper features use Zod schemas rather than free-form parsing.
+- Product output generation uses `OPENAI_PRODUCT_MODEL`, defaulting to `gpt-4.1`.
+- Higher-reasoning evaluation features use `OPENAI_REASONING_MODEL`, defaulting to `gpt-5`.
+- The OpenAI key is read only by server-side code under `app/api/ai` and `lib/openai.ts`.
+- The app does not impose a test-case cap or an artificial AI-generation limit.
 
 ## Environment Variables
 
-Copy `.env.example` to `.env.local`:
+Create `.env.local` from `.env.example`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -49,18 +43,40 @@ OPENAI_PRODUCT_MODEL=gpt-4.1
 OPENAI_REASONING_MODEL=gpt-5
 ```
 
-Never expose `OPENAI_API_KEY` in browser code. All OpenAI calls live under `app/api/ai/*` and `lib/openai.ts`.
+Never rename `OPENAI_API_KEY` with a `NEXT_PUBLIC_` prefix. A Supabase service-role key is not needed and must not be added to browser code.
 
-## Supabase Setup
+## Fresh Supabase Project
 
-1. Create a Supabase project.
-2. Open the SQL editor.
-3. Run `supabase/schema.sql`.
-4. Add the Supabase URL and publishable key to `.env.local`.
-5. Ensure email/password auth is enabled.
-6. Optionally run `supabase/seed.sql` after replacing the demo UUID with your authenticated user id.
+1. Create a new Supabase project.
+2. Open the Supabase SQL Editor.
+3. Run the complete contents of `supabase/schema.sql` once.
+4. Confirm the `workspaces` and project-related tables appear in the Table Editor.
+5. Add the project URL and publishable key to `.env.local`.
+6. Optionally run `supabase/seed.sql` in the SQL Editor to add a demonstration workspace and project.
 
-The schema includes UUID primary keys, timestamps, foreign keys, indexes, RLS policies, and a partial unique index so each project has only one active prompt version.
+The schema explicitly grants Data API access to `anon` and `authenticated`, enables RLS on every exposed table, and applies public collaborative CRUD policies. It also creates foreign-key indexes and a unique database-generated workspace slug.
+
+## Existing Supabase Project Migration
+
+Back up the database before applying any production migration. Then run `supabase/migrations/20260711214913_public_workspaces.sql` once against the existing LaunchGuard database.
+
+The migration:
+
+1. Creates `public.workspaces`.
+2. Adds `projects.workspace_id`.
+3. Creates `LaunchGuard Community` when existing projects need a workspace.
+4. Assigns all existing projects to that workspace.
+5. Preserves prompt versions, criteria, test cases, runs, outputs, reviews, ratings, and reports through their existing project relationships.
+6. Removes obsolete project-related `user_id` columns and owner policies after the backfill.
+7. Adds public RLS policies and explicit Data API grants.
+
+For a repository linked with the Supabase CLI, apply committed migrations with:
+
+```bash
+npx supabase db push
+```
+
+For a project managed through the dashboard, paste the migration into the SQL Editor and run it once. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
 
 ## Local Development
 
@@ -69,40 +85,32 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+Open `http://localhost:3000`. The first screen works without a Supabase session.
 
-Useful checks:
+Validation commands:
 
 ```bash
 npm run typecheck
+npm run lint
 npm run build
 ```
 
-## Deployment To Vercel
-
-1. Push the repo to GitHub.
-2. Import it in Vercel.
-3. Add the same environment variables from `.env.example`.
-4. Deploy.
-
-The app uses Supabase SSR cookie auth, so no service-role key is required for the browser or normal server routes.
-
 ## Product Routes
 
-- `/` landing page
-- `/login`
-- `/signup`
-- `/dashboard`
-- `/projects/new`
-- `/projects/[projectId]`
-- `/projects/[projectId]/prompts`
-- `/projects/[projectId]/criteria`
-- `/projects/[projectId]/dataset`
-- `/projects/[projectId]/review`
-- `/projects/[projectId]/results`
-- `/projects/[projectId]/reports`
+- `/` - public landing page
+- `/workspaces` - public workspace directory
+- `/workspaces/new` - create a workspace
+- `/workspaces/[workspaceSlug]` - workspace detail and project list
+- `/workspaces/[workspaceSlug]/projects/new` - create an AI project
+- `/workspaces/[workspaceSlug]/projects/[projectId]` - project overview
+- `/workspaces/[workspaceSlug]/projects/[projectId]/prompts`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/criteria`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/dataset`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/review`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/results`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/reports`
 
-## API Routes
+## Server API Routes
 
 - `/api/ai/suggest-criteria`
 - `/api/ai/generate-test-cases`
@@ -111,11 +119,20 @@ The app uses Supabase SSR cookie auth, so no service-role key is required for th
 - `/api/ai/create-prompt-version`
 - `/api/export/project-csv`
 
-## Future Roadmap
+Every AI route validates workspace, project, prompt-version, and test-case relationships before using the server-side OpenAI key.
 
-- LLM-as-a-judge as v2, stored separately from human review ratings.
-- Judge calibration against human ratings.
-- Prompt comparison reports across versions.
-- Team workspaces and reviewer assignments.
-- More export formats after CSV.
-- Richer eval run history and regression charts.
+## Deployment to Vercel
+
+1. Push the feature branch to GitHub and review it through a pull request.
+2. Apply the Supabase migration before deploying the new application routes.
+3. Import the repository in Vercel.
+4. Add the five environment variables listed above.
+5. Deploy and complete the public-flow QA checklist.
+
+## Prototype Limitations
+
+- Every visitor can read, create, edit, and delete collaborative data.
+- There is no change attribution, revision audit log, undo history, moderation, or abuse protection.
+- OpenAI usage is paid by the server-side API key owner and is intentionally uncapped in this prototype.
+- Concurrent editors can overwrite one another because real-time conflict handling is not included.
+- LLM-as-a-judge remains outside this MVP; review scores are human-entered.
