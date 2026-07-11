@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "LaunchGuard AI Evaluator",
-  description: "Human evaluation workspace for AI product builders."
+  description: "Open collaborative workspaces for structured AI prompt evaluation."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

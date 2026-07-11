@@ -5,9 +5,18 @@ export type Severity = "Low" | "Medium" | "High";
 export type TestCaseStatus = "draft" | "generated" | "reviewed";
 export type CaseType = "normal" | "edge" | "ambiguous" | "missing_context" | "adversarial" | "tone_sensitive";
 
+export type Workspace = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Project = {
   id: string;
-  user_id: string;
+  workspace_id: string;
   name: string;
   product_type: string;
   goal: string;
@@ -21,7 +30,6 @@ export type Project = {
 export type PromptVersion = {
   id: string;
   project_id: string;
-  user_id: string;
   version_number: number;
   system_prompt: string;
   model_used: string;
@@ -33,7 +41,6 @@ export type PromptVersion = {
 export type EvaluationCriterion = {
   id: string;
   project_id: string;
-  user_id: string;
   name: string;
   description: string;
   good_definition: string;
@@ -47,7 +54,6 @@ export type EvaluationCriterion = {
 export type TestCase = {
   id: string;
   project_id: string;
-  user_id: string;
   user_input: string;
   case_type: CaseType | null;
   variable_values: Record<string, string>;
@@ -64,7 +70,6 @@ export type HumanReview = {
   id: string;
   project_id: string;
   test_case_id: string;
-  user_id: string;
   failure_category: string | null;
   severity: Severity | null;
   human_notes: string | null;
@@ -75,7 +80,6 @@ export type HumanReviewRating = {
   id: string;
   review_id: string;
   criterion_id: string;
-  user_id: string;
   rating_label: RatingLabel;
   rating_score: number;
 };
@@ -84,7 +88,6 @@ export type ErrorAnalysisReport = {
   id: string;
   project_id: string;
   prompt_version_id: string | null;
-  user_id: string;
   summary: Record<string, unknown>;
   created_at: string;
 };

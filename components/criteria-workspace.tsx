@@ -17,10 +17,12 @@ type Suggested = {
 };
 
 export function CriteriaWorkspace({
+  workspaceSlug,
   project,
   activePrompt,
   criteria
 }: {
+  workspaceSlug: string;
   project: Project;
   activePrompt: PromptVersion | null;
   criteria: EvaluationCriterion[];
@@ -36,7 +38,7 @@ export function CriteriaWorkspace({
       const res = await fetch("/api/ai/suggest-criteria", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: project.id })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id })
       });
       const json = await res.json();
       if (!res.ok) setError(json.error || "Could not suggest criteria.");
@@ -46,6 +48,7 @@ export function CriteriaWorkspace({
 
   async function accept(item: Suggested) {
     const form = new FormData();
+    form.set("workspace_slug", workspaceSlug);
     form.set("project_id", project.id);
     Object.entries(item).forEach(([key, value]) => form.set(key, value));
     await saveCriterion(form);
@@ -83,6 +86,7 @@ export function CriteriaWorkspace({
         <h2 className="text-lg font-semibold text-white">Manual criterion</h2>
         <form action={saveCriterion} className="mt-4 grid gap-4">
           <input type="hidden" name="project_id" value={project.id} />
+          <input type="hidden" name="workspace_slug" value={workspaceSlug} />
           <div className="grid gap-4 md:grid-cols-2">
             <div><Label>Name</Label><TextInput required name="name" placeholder="Factual accuracy" /></div>
             <div><Label>Category</Label><TextInput name="category" placeholder="Correctness" /></div>
@@ -108,11 +112,31 @@ export function CriteriaWorkspace({
                     <div className="flex items-center gap-2"><p className="font-medium text-white">{criterion.name}</p>{criterion.category ? <Badge>{criterion.category}</Badge> : null}</div>
                     <p className="mt-2 text-sm text-slate-300">{criterion.description}</p>
                     <p className="mt-2 text-xs text-slate-400">Good: {criterion.good_definition}</p>
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-sm font-medium text-guard-cyan">Edit criterion</summary>
+                      <form action={saveCriterion} className="mt-4 grid gap-4 rounded-md border border-white/10 bg-white/[0.03] p-4">
+                        <input type="hidden" name="id" value={criterion.id} />
+                        <input type="hidden" name="project_id" value={project.id} />
+                        <input type="hidden" name="workspace_slug" value={workspaceSlug} />
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div><Label>Name</Label><TextInput required name="name" defaultValue={criterion.name} /></div>
+                          <div><Label>Category</Label><TextInput name="category" defaultValue={criterion.category || ""} /></div>
+                        </div>
+                        <div><Label>Description</Label><TextArea required name="description" defaultValue={criterion.description} /></div>
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div><Label>Good definition</Label><TextArea required name="good_definition" defaultValue={criterion.good_definition} /></div>
+                          <div><Label>Average definition</Label><TextArea required name="average_definition" defaultValue={criterion.average_definition} /></div>
+                          <div><Label>Bad definition</Label><TextArea required name="bad_definition" defaultValue={criterion.bad_definition} /></div>
+                        </div>
+                        <SubmitButton pendingText="Updating criterion...">Update criterion</SubmitButton>
+                      </form>
+                    </details>
                   </div>
                   <form action={deleteCriterion}>
                     <input type="hidden" name="id" value={criterion.id} />
                     <input type="hidden" name="project_id" value={project.id} />
-                    <SubmitButton className="bg-guard-red/15 text-guard-red hover:bg-guard-red/25" pendingText="Deleting...">Delete</SubmitButton>
+                    <input type="hidden" name="workspace_slug" value={workspaceSlug} />
+                    <SubmitButton confirmMessage={`Delete the ${criterion.name} criterion?`} className="bg-guard-red/15 text-guard-red hover:bg-guard-red/25" pendingText="Deleting...">Delete</SubmitButton>
                   </form>
                 </div>
               </div>

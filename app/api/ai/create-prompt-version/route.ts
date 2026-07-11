@@ -1,23 +1,22 @@
 import { NextResponse } from "next/server";
 import { promptVNextSchema } from "@/lib/ai/schemas";
+import { getWorkspaceProject } from "@/lib/data";
 import { runStructuredOutput } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
   try {
-    const { project_id } = await request.json();
+    const { workspace_slug, project_id } = await request.json();
     const supabase = await createClient();
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getWorkspaceProject(supabase, workspace_slug, project_id);
+    if (!context) return NextResponse.json({ error: "Project was not found in this workspace." }, { status: 404 });
 
     const [{ data: prompt }, { data: report }, { data: criteria }, { data: reviews }, { data: testCases }] = await Promise.all([
-      supabase.from("prompt_versions").select("*").eq("project_id", project_id).eq("user_id", user.id).eq("is_active", true).single(),
-      supabase.from("error_analysis_reports").select("*").eq("project_id", project_id).eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).single(),
-      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id).eq("user_id", user.id),
-      supabase.from("human_reviews").select("*, human_review_ratings(*)").eq("project_id", project_id).eq("user_id", user.id),
-      supabase.from("test_cases").select("*").eq("project_id", project_id).eq("user_id", user.id).eq("status", "reviewed")
+      supabase.from("prompt_versions").select("*").eq("project_id", project_id).eq("is_active", true).maybeSingle(),
+      supabase.from("error_analysis_reports").select("*").eq("project_id", project_id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id),
+      supabase.from("human_reviews").select("*, human_review_ratings(*)").eq("project_id", project_id),
+      supabase.from("test_cases").select("*").eq("project_id", project_id).eq("status", "reviewed")
     ]);
     if (!prompt || !report) return NextResponse.json({ error: "Active prompt or error analysis report not found." }, { status: 404 });
 

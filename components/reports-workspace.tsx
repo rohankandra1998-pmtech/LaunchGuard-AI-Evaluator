@@ -15,7 +15,7 @@ type PromptDraft = {
   removed_instructions: string[];
 };
 
-export function ReportsWorkspace({ projectId, reports }: { projectId: string; reports: ErrorAnalysisReport[] }) {
+export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { workspaceSlug: string; projectId: string; reports: ErrorAnalysisReport[] }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<PromptDraft | null>(null);
@@ -27,7 +27,7 @@ export function ReportsWorkspace({ projectId, reports }: { projectId: string; re
       const res = await fetch("/api/ai/error-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
       });
       const json = await res.json();
       if (!res.ok) setError(json.error || "Could not summarize error analysis.");
@@ -41,7 +41,7 @@ export function ReportsWorkspace({ projectId, reports }: { projectId: string; re
       const res = await fetch("/api/ai/create-prompt-version", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
       });
       const json = await res.json();
       if (!res.ok) setError(json.error || "Could not create prompt vNext.");
@@ -75,6 +75,7 @@ export function ReportsWorkspace({ projectId, reports }: { projectId: string; re
         {draft ? (
           <form action={savePromptDraft} className="mt-4 grid gap-4">
             <input type="hidden" name="project_id" value={projectId} />
+            <input type="hidden" name="workspace_slug" value={workspaceSlug} />
             <div><Label>Change summary</Label><TextArea name="change_summary" defaultValue={draft.change_summary} /></div>
             <div><Label>Improved system prompt</Label><TextArea name="system_prompt" className="min-h-96 font-mono" defaultValue={draft.improved_system_prompt} /></div>
             <div className="rounded-md border border-white/10 bg-slate-950/35 p-4 text-sm text-slate-300">

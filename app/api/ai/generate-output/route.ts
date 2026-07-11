@@ -1,67 +1,69 @@
 import { NextResponse } from "next/server";
+import { assertUuid, getWorkspaceProject } from "@/lib/data";
 import { generateProductOutput, getProductModel, getReasoningModel } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 import { interpolatePrompt } from "@/lib/utils";
 
 export async function POST(request: Request) {
   try {
-    const { project_id, test_case_ids, prompt_version_id, model } = await request.json();
+    const { workspace_slug, project_id, test_case_ids, prompt_version_id, model } = await request.json();
     const selectedModel = model || getProductModel();
     if (![getProductModel(), getReasoningModel()].includes(selectedModel)) {
       return NextResponse.json({ error: "Unsupported model." }, { status: 400 });
     }
 
+    const selectedIds = Array.isArray(test_case_ids)
+      ? [...new Set(test_case_ids.map((id) => assertUuid(id, "Test case ID")))]
+      : [];
+    if (!selectedIds.length) return NextResponse.json({ error: "No test cases selected." }, { status: 400 });
+
     const supabase = await createClient();
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getWorkspaceProject(supabase, workspace_slug, project_id);
+    if (!context) return NextResponse.json({ error: "Project was not found in this workspace." }, { status: 404 });
+    const promptId = assertUuid(prompt_version_id, "Prompt version ID");
 
-    const [{ data: prompt }, { data: testCases }] = await Promise.all([
-      supabase.from("prompt_versions").select("*").eq("id", prompt_version_id).eq("project_id", project_id).eq("user_id", user.id).single(),
-      supabase.from("test_cases").select("*").eq("project_id", project_id).eq("user_id", user.id).in("id", test_case_ids || [])
+    const [{ data: prompt, error: promptError }, { data: testCases, error: casesError }] = await Promise.all([
+      supabase.from("prompt_versions").select("*").eq("id", promptId).eq("project_id", project_id).maybeSingle(),
+      supabase.from("test_cases").select("*").eq("project_id", project_id).in("id", selectedIds)
     ]);
-
-    if (!prompt) return NextResponse.json({ error: "Prompt version not found." }, { status: 404 });
-    if (!testCases?.length) return NextResponse.json({ error: "No test cases selected." }, { status: 400 });
+    if (promptError) throw promptError;
+    if (casesError) throw casesError;
+    if (!prompt) return NextResponse.json({ error: "Prompt version does not belong to this project." }, { status: 404 });
+    if ((testCases || []).length !== selectedIds.length) {
+      return NextResponse.json({ error: "One or more test cases do not belong to this project." }, { status: 400 });
+    }
 
     const { data: run, error: runError } = await supabase
       .from("eval_runs")
       .insert({
-        user_id: user.id,
         project_id,
-        prompt_version_id,
+        prompt_version_id: promptId,
         model_used: selectedModel,
-        test_case_count: testCases.length
+        test_case_count: testCases!.length
       })
       .select("id")
       .single();
     if (runError) throw runError;
 
     const results = [];
-    for (const testCase of testCases) {
+    for (const testCase of testCases!) {
       const systemPrompt = interpolatePrompt(prompt.system_prompt, testCase.variable_values || {});
       const output = await generateProductOutput({ systemPrompt, userInput: testCase.user_input, model: selectedModel });
       const { error: outputError } = await supabase.from("generated_outputs").insert({
-        user_id: user.id,
         project_id,
         eval_run_id: run.id,
         test_case_id: testCase.id,
-        prompt_version_id,
+        prompt_version_id: promptId,
         model_used: selectedModel,
         output_text: output
       });
       if (outputError) throw outputError;
+
       const { error: testCaseError } = await supabase
         .from("test_cases")
-        .update({
-          generated_ai_output: output,
-          prompt_version_id,
-          model_used: selectedModel,
-          status: "generated"
-        })
+        .update({ generated_ai_output: output, prompt_version_id: promptId, model_used: selectedModel, status: "generated" })
         .eq("id", testCase.id)
-        .eq("user_id", user.id);
+        .eq("project_id", project_id);
       if (testCaseError) throw testCaseError;
       results.push({ id: testCase.id, output });
     }
