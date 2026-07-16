@@ -1,11 +1,14 @@
 import { createPromptVersion } from "@/app/actions";
 import { SubmitButton } from "@/components/submit-button";
-import { ButtonLink, Card, Label, PageHeader, Select, TextArea, TextInput } from "@/components/ui";
-import { projectPath } from "@/lib/data";
+import { Badge, ButtonLink, Card, Label, PageHeader, Select, TextArea, TextInput } from "@/components/ui";
+import { getNextPromptVersionNumber, projectPath } from "@/lib/data";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function NewPromptVersionPage({ params }: { params: Promise<{ workspaceSlug: string; projectId: string }> }) {
   const { workspaceSlug, projectId } = await params;
   const promptsPath = projectPath(workspaceSlug, projectId, "/prompts");
+  const supabase = await createClient();
+  const nextVersionNumber = await getNextPromptVersionNumber(supabase, projectId);
 
   return (
     <div>
@@ -13,6 +16,13 @@ export default async function NewPromptVersionPage({ params }: { params: Promise
         Start a new draft independently with a blank system prompt instead of copying an existing version.
       </PageHeader>
       <Card>
+        <div className="mb-5 border-b border-white/10 pb-5">
+          <p className="mb-2 text-sm text-slate-400">Next version</p>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-white">v{nextVersionNumber}</h2>
+            <Badge>Draft</Badge>
+          </div>
+        </div>
         <form action={createPromptVersion} className="grid gap-5">
           <input type="hidden" name="workspace_slug" value={workspaceSlug} />
           <input type="hidden" name="project_id" value={projectId} />

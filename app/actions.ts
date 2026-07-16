@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assertUuid, assertWorkspaceSlug, getWorkspace, projectPath, requireWorkspaceProject } from "@/lib/data";
+import { assertUuid, assertWorkspaceSlug, getNextPromptVersionNumber, getWorkspace, projectPath, requireWorkspaceProject } from "@/lib/data";
 import { parseJsonObject, parseVariables, ratingLabelToScore } from "@/lib/utils";
 import { getProductModel, getReasoningModel } from "@/lib/openai";
 
@@ -124,18 +124,11 @@ export async function createPromptVersion(formData: FormData) {
   const systemPrompt = formString(formData, "system_prompt");
   if (!systemPrompt) throw new Error("System prompt is required.");
 
-  const { data: latest, error: latestError } = await supabase
-    .from("prompt_versions")
-    .select("version_number")
-    .eq("project_id", projectId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (latestError) throw latestError;
+  const nextVersionNumber = await getNextPromptVersionNumber(supabase, projectId);
 
   const { error } = await supabase.from("prompt_versions").insert({
     project_id: projectId,
-    version_number: (latest?.version_number || 0) + 1,
+    version_number: nextVersionNumber,
     system_prompt: systemPrompt,
     model_used: validateModel(formString(formData, "model_used")),
     notes: formString(formData, "notes") || null,
@@ -158,24 +151,67 @@ export async function duplicatePromptVersion(formData: FormData) {
   if (sourceError) throw sourceError;
   if (!source) throw new Error("Prompt version does not belong to this project.");
 
-  const { data: latest, error: latestError } = await supabase
-    .from("prompt_versions")
-    .select("version_number")
-    .eq("project_id", projectId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .single();
-  if (latestError) throw latestError;
+  const nextVersionNumber = await getNextPromptVersionNumber(supabase, projectId);
 
   const { error } = await supabase.from("prompt_versions").insert({
     project_id: projectId,
-    version_number: latest.version_number + 1,
+    version_number: nextVersionNumber,
     system_prompt: source.system_prompt,
     model_used: source.model_used,
     notes: `Duplicated from v${source.version_number}`,
     is_active: false
   });
   if (error) throw error;
+  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+}
+
+export async function deletePromptVersion(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const id = assertUuid(formString(formData, "id"), "Prompt version ID");
+
+  const { data: version, error: versionError } = await supabase
+    .from("prompt_versions")
+    .select("id, version_number, is_active")
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (versionError) throw versionError;
+  if (!version) throw new Error("Prompt version does not belong to this project.");
+  if (version.is_active) throw new Error(`Activate another prompt version before deleting v${version.version_number}.`);
+
+  const { count: versionCount, error: countError } = await supabase
+    .from("prompt_versions")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId);
+  if (countError) throw countError;
+  if (versionCount === null) throw new Error("Could not count prompt versions.");
+  if (versionCount <= 1) throw new Error("A project must keep at least one prompt version.");
+
+  const referenceResults = await Promise.all([
+    supabase.from("test_cases").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id),
+    supabase.from("eval_runs").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id),
+    supabase.from("generated_outputs").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id),
+    supabase.from("error_analysis_reports").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id)
+  ]);
+  for (const result of referenceResults) {
+    if (result.error) throw result.error;
+    if (result.count === null) throw new Error("Could not check prompt version evaluation history.");
+  }
+  if (referenceResults.some((result) => result.count! > 0)) {
+    throw new Error(`v${version.version_number} has evaluation history and cannot be deleted.`);
+  }
+
+  const { data: deleted, error } = await supabase
+    .from("prompt_versions")
+    .delete()
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!deleted) throw new Error("Prompt version could not be deleted.");
   revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
 }
 

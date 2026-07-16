@@ -46,6 +46,19 @@ export async function requireWorkspaceProject(supabase: SupabaseClient, workspac
   return context;
 }
 
+export async function getNextPromptVersionNumber(supabase: SupabaseClient, projectId: string) {
+  const id = assertUuid(projectId, "Project ID");
+  const { data: latest, error } = await supabase
+    .from("prompt_versions")
+    .select("version_number")
+    .eq("project_id", id)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (latest?.version_number ?? 0) + 1;
+}
+
 export function projectPath(workspaceSlug: string, projectId: string, suffix = "") {
   return `/workspaces/${workspaceSlug}/projects/${projectId}${suffix}`;
 }
