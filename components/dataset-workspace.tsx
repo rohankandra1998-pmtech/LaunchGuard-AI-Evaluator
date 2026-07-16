@@ -10,11 +10,13 @@ import type { EvaluationCriterion, Project, PromptVersion, TestCase } from "@/li
 const statusTone = { draft: "neutral", generated: "cyan", reviewed: "good" } as const;
 
 export function DatasetWorkspace({
+  workspaceSlug,
   project,
   promptVersions,
   criteria,
   testCases
 }: {
+  workspaceSlug: string;
   project: Project;
   promptVersions: PromptVersion[];
   criteria: EvaluationCriterion[];
@@ -39,7 +41,7 @@ export function DatasetWorkspace({
       const res = await fetch("/api/ai/generate-test-cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: project.id })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id })
       });
       const json = await res.json();
       if (!res.ok) setError(json.error || "Could not generate starter test cases.");
@@ -54,7 +56,7 @@ export function DatasetWorkspace({
       const res = await fetch("/api/ai/generate-output", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: project.id, test_case_ids: ids, prompt_version_id: promptVersion, model })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id, test_case_ids: ids, prompt_version_id: promptVersion, model })
       });
       const json = await res.json();
       if (!res.ok) setError(json.error || "Could not run AI outputs.");
@@ -66,7 +68,7 @@ export function DatasetWorkspace({
   }
 
   async function saveSuggestions() {
-    await saveGeneratedTestCases(project.id, generated);
+    await saveGeneratedTestCases(workspaceSlug, project.id, generated);
     setGenerated([]);
     router.refresh();
   }
@@ -77,6 +79,7 @@ export function DatasetWorkspace({
         <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
           <form action={saveTestCase} className="grid gap-4">
             <input type="hidden" name="project_id" value={project.id} />
+            <input type="hidden" name="workspace_slug" value={workspaceSlug} />
             <h2 className="text-lg font-semibold text-white">Add test case</h2>
             <div><Label>User input / question</Label><TextArea required name="user_input" /></div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -142,11 +145,27 @@ export function DatasetWorkspace({
                     <td className="p-3 text-slate-300">{testCase.case_type}</td>
                     <td className="max-w-sm truncate p-3 text-slate-400">{testCase.generated_ai_output || "Not generated"}</td>
                     <td className="p-3">
-                      <form action={deleteTestCase}>
-                        <input type="hidden" name="id" value={testCase.id} />
-                        <input type="hidden" name="project_id" value={project.id} />
-                        <SubmitButton className="bg-guard-red/15 text-guard-red hover:bg-guard-red/25" pendingText="Deleting...">Delete</SubmitButton>
-                      </form>
+                      <div className="flex items-start gap-2">
+                        <details>
+                          <summary className="cursor-pointer rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Edit</summary>
+                          <form action={saveTestCase} className="mt-3 grid w-80 gap-3 rounded-md border border-white/10 bg-guard-panel p-4 shadow-glow">
+                            <input type="hidden" name="id" value={testCase.id} />
+                            <input type="hidden" name="project_id" value={project.id} />
+                            <input type="hidden" name="workspace_slug" value={workspaceSlug} />
+                            <div><Label>User input</Label><TextArea required name="user_input" defaultValue={testCase.user_input} /></div>
+                            <div><Label>Case type</Label><Select name="case_type" defaultValue={testCase.case_type || "normal"}><option value="normal">normal</option><option value="edge">edge</option><option value="ambiguous">ambiguous</option><option value="missing_context">missing_context</option><option value="adversarial">adversarial</option><option value="tone_sensitive">tone_sensitive</option></Select></div>
+                            <div><Label>Expected answer</Label><TextArea name="expected_answer" defaultValue={testCase.expected_answer || ""} /></div>
+                            <div><Label>Variable values JSON</Label><TextArea name="variable_values" defaultValue={JSON.stringify(testCase.variable_values, null, 2)} className="font-mono" /></div>
+                            <SubmitButton pendingText="Updating case...">Update test case</SubmitButton>
+                          </form>
+                        </details>
+                        <form action={deleteTestCase}>
+                          <input type="hidden" name="id" value={testCase.id} />
+                          <input type="hidden" name="project_id" value={project.id} />
+                          <input type="hidden" name="workspace_slug" value={workspaceSlug} />
+                          <SubmitButton confirmMessage="Delete this test case and its generated output history?" className="bg-guard-red/15 text-guard-red hover:bg-guard-red/25" pendingText="Deleting...">Delete</SubmitButton>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}

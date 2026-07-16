@@ -7,6 +7,7 @@ import { Badge, Card, EmptyState, Label, Select, TextArea, TextInput } from "@/c
 import type { EvaluationCriterion, HumanReview, HumanReviewRating, PromptVersion, TestCase } from "@/lib/types";
 
 export function ReviewWorkspace({
+  workspaceSlug,
   projectId,
   testCases,
   criteria,
@@ -14,6 +15,7 @@ export function ReviewWorkspace({
   ratings,
   promptVersions
 }: {
+  workspaceSlug: string;
   projectId: string;
   testCases: TestCase[];
   criteria: EvaluationCriterion[];
@@ -90,6 +92,7 @@ export function ReviewWorkspace({
             </div>
             <form action={saveHumanReview} className="grid gap-4">
               <input type="hidden" name="project_id" value={projectId} />
+              <input type="hidden" name="workspace_slug" value={workspaceSlug} />
               <input type="hidden" name="test_case_id" value={selected.id} />
               <div className="grid gap-3">
                 {criteria.map((criterion) => (
