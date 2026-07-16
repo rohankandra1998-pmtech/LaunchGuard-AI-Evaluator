@@ -3,6 +3,7 @@ import { assertUuid, getWorkspaceProject } from "@/lib/data";
 import { generateProductOutput, getProductModel, getReasoningModel } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 import { interpolatePrompt } from "@/lib/utils";
+import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 
 export async function POST(request: Request) {
   try {
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
       results.push({ id: testCase.id, output });
     }
 
+    revalidateProjectActivityPaths(workspace_slug, project_id, "/dataset", "/review", "/results");
     return NextResponse.json({ run_id: run.id, results });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

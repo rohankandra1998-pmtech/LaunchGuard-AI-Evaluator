@@ -58,7 +58,7 @@ The schema explicitly grants Data API access to `anon` and `authenticated`, enab
 
 ## Existing Supabase Project Migration
 
-Back up the database before applying any production migration. Then run `supabase/migrations/20260711214913_public_workspaces.sql` once against the existing LaunchGuard database.
+Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order, including `supabase/migrations/20260715223000_propagate_project_activity.sql`.
 
 The migration:
 
@@ -76,7 +76,7 @@ For a repository linked with the Supabase CLI, apply committed migrations with:
 npx supabase db push
 ```
 
-For a project managed through the dashboard, paste the migration into the SQL Editor and run it once. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
+For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must also be executed there so project child changes update the workspace directory. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
 
 ## Local Development
 

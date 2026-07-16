@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { assertUuid, assertWorkspaceSlug, getNextPromptVersionNumber, getWorkspace, projectPath, requireWorkspaceProject } from "@/lib/data";
 import { parseJsonObject, parseVariables, ratingLabelToScore } from "@/lib/utils";
 import { getProductModel, getReasoningModel } from "@/lib/openai";
+import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
@@ -49,6 +50,7 @@ export async function createWorkspace(formData: FormData) {
     .single();
   if (error) throw error;
 
+  revalidatePath("/workspaces");
   redirect(`/workspaces/${workspace.slug}`);
 }
 
@@ -92,6 +94,7 @@ export async function createProject(formData: FormData) {
     throw promptError;
   }
 
+  revalidateProjectActivityPaths(workspace.slug, project.id, "/prompts");
   redirect(projectPath(workspace.slug, project.id));
 }
 
@@ -114,7 +117,7 @@ export async function updatePromptVersion(formData: FormData) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Prompt version does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
 export async function createPromptVersion(formData: FormData) {
@@ -137,7 +140,7 @@ export async function createPromptVersion(formData: FormData) {
   if (error) throw error;
 
   const promptsPath = projectPath(workspaceSlug, projectId, "/prompts");
-  revalidatePath(promptsPath);
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
   redirect(promptsPath);
 }
 
@@ -162,7 +165,7 @@ export async function duplicatePromptVersion(formData: FormData) {
     is_active: false
   });
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
 export async function deletePromptVersion(formData: FormData) {
@@ -212,7 +215,7 @@ export async function deletePromptVersion(formData: FormData) {
     .maybeSingle();
   if (error) throw error;
   if (!deleted) throw new Error("Prompt version could not be deleted.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
 export async function activatePromptVersion(formData: FormData) {
@@ -226,7 +229,7 @@ export async function activatePromptVersion(formData: FormData) {
   if (deactivateError) throw deactivateError;
   const { error } = await supabase.from("prompt_versions").update({ is_active: true }).eq("id", id).eq("project_id", projectId);
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
 export async function saveCriterion(formData: FormData) {
@@ -252,7 +255,7 @@ export async function saveCriterion(formData: FormData) {
     : await supabase.from("evaluation_criteria").insert(payload).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Criterion does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/criteria"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria");
 }
 
 export async function deleteCriterion(formData: FormData) {
@@ -263,7 +266,7 @@ export async function deleteCriterion(formData: FormData) {
   const { data, error } = await supabase.from("evaluation_criteria").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Criterion does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/criteria"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria");
 }
 
 export async function saveTestCase(formData: FormData) {
@@ -288,7 +291,7 @@ export async function saveTestCase(formData: FormData) {
     : await supabase.from("test_cases").insert(payload).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Test case does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/dataset"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, cases: Array<Record<string, unknown>>) {
@@ -310,7 +313,7 @@ export async function saveGeneratedTestCases(workspaceSlug: string, projectId: s
   if (rows.some((row) => !row.user_input)) throw new Error("Generated test cases must include user input.");
   const { error } = await supabase.from("test_cases").insert(rows);
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/dataset"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function deleteTestCase(formData: FormData) {
@@ -321,7 +324,7 @@ export async function deleteTestCase(formData: FormData) {
   const { data, error } = await supabase.from("test_cases").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Test case does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/dataset"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function saveHumanReview(formData: FormData) {
@@ -375,8 +378,7 @@ export async function saveHumanReview(formData: FormData) {
 
   const { error: testCaseError } = await supabase.from("test_cases").update({ status: "reviewed" }).eq("id", testCaseId).eq("project_id", projectId);
   if (testCaseError) throw testCaseError;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/review"));
-  revalidatePath(projectPath(workspaceSlug, projectId, "/results"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/review", "/results");
 }
 
 export async function savePromptDraft(formData: FormData) {
@@ -404,6 +406,5 @@ export async function savePromptDraft(formData: FormData) {
     is_active: false
   });
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
-  revalidatePath(projectPath(workspaceSlug, projectId, "/reports"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts", "/reports");
 }

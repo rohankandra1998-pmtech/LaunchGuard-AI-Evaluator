@@ -5,6 +5,8 @@ import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui
 import { getWorkspace } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export default async function WorkspacePage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
   const { workspaceSlug } = await params;
   const supabase = await createClient();

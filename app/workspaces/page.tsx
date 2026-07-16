@@ -3,11 +3,13 @@ import { ArrowRight, FolderKanban, PlusCircle } from "lucide-react";
 import { ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export default async function WorkspacesPage() {
   const supabase = await createClient();
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("*, projects(id, updated_at, test_cases(id, status))")
+    .select("*, projects(id, test_cases(id, status))")
     .order("updated_at", { ascending: false });
   if (error) throw error;
 
@@ -27,10 +29,6 @@ export default async function WorkspacesPage() {
             const projects = workspace.projects || [];
             const testCases = projects.flatMap((project: { test_cases?: Array<{ id: string; status: string }> }) => project.test_cases || []);
             const reviewed = testCases.filter((testCase: { status: string }) => testCase.status === "reviewed").length;
-            const updatedAt = projects.reduce(
-              (latest: string, project: { updated_at: string }) => project.updated_at > latest ? project.updated_at : latest,
-              workspace.updated_at
-            );
             return (
               <Link key={workspace.id} href={`/workspaces/${workspace.slug}`} className="group block">
                 <Card className="h-full transition group-hover:border-guard-cyan/40 group-hover:bg-white/[0.065]">
@@ -45,7 +43,7 @@ export default async function WorkspacesPage() {
                     <div><dt className="text-xs text-slate-500">Test cases</dt><dd className="mt-1 font-medium text-white">{testCases.length}</dd></div>
                     <div><dt className="text-xs text-slate-500">Reviewed</dt><dd className="mt-1 font-medium text-white">{reviewed}</dd></div>
                   </dl>
-                  <p className="mt-4 text-xs text-slate-500">Updated {new Date(updatedAt).toLocaleDateString()}</p>
+                  <p className="mt-4 text-xs text-slate-500">Updated {new Date(workspace.updated_at).toLocaleDateString()}</p>
                 </Card>
               </Link>
             );
