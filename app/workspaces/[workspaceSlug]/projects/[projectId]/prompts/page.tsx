@@ -1,4 +1,5 @@
-import { activatePromptVersion, deletePromptVersion, duplicatePromptVersion, updatePromptVersion } from "@/app/actions";
+import { activatePromptVersion, duplicatePromptVersion, updatePromptVersion } from "@/app/actions";
+import { DeletePromptVersionDialog } from "@/components/delete-prompt-version-dialog";
 import { SubmitButton } from "@/components/submit-button";
 import { Badge, ButtonLink, Card, EmptyState, Label, PageHeader, Select, TextArea, TextInput } from "@/components/ui";
 import { projectPath } from "@/lib/data";
@@ -27,7 +28,7 @@ export default async function PromptsPage({ params }: { params: Promise<{ worksp
               <div className="flex items-center gap-3"><h2 className="text-lg font-semibold text-white">v{version.version_number}</h2>{version.is_active ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}</div>
               <div className="flex flex-wrap gap-2">
                 <form action={duplicatePromptVersion}>{hidden}<input type="hidden" name="id" value={version.id} /><SubmitButton className="bg-white/10 text-white hover:bg-white/15" pendingText="Duplicating...">Duplicate</SubmitButton></form>
-                {!version.is_active ? <form action={deletePromptVersion}>{hidden}<input type="hidden" name="id" value={version.id} /><SubmitButton confirmMessage={`Delete v${version.version_number}? This action cannot be undone.`} className="bg-guard-red/15 text-guard-red hover:bg-guard-red/25" pendingText="Deleting...">Delete</SubmitButton></form> : null}
+                {!version.is_active ? <DeletePromptVersionDialog workspaceSlug={workspaceSlug} projectId={projectId} versionId={version.id} versionNumber={version.version_number} /> : null}
                 {!version.is_active ? <form action={activatePromptVersion}>{hidden}<input type="hidden" name="id" value={version.id} /><SubmitButton pendingText="Activating...">Mark active</SubmitButton></form> : null}
               </div>
             </div>
