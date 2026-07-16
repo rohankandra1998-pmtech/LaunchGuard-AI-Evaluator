@@ -117,6 +117,37 @@ export async function updatePromptVersion(formData: FormData) {
   revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
 }
 
+export async function createPromptVersion(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const systemPrompt = formString(formData, "system_prompt");
+  if (!systemPrompt) throw new Error("System prompt is required.");
+
+  const { data: latest, error: latestError } = await supabase
+    .from("prompt_versions")
+    .select("version_number")
+    .eq("project_id", projectId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestError) throw latestError;
+
+  const { error } = await supabase.from("prompt_versions").insert({
+    project_id: projectId,
+    version_number: (latest?.version_number || 0) + 1,
+    system_prompt: systemPrompt,
+    model_used: validateModel(formString(formData, "model_used")),
+    notes: formString(formData, "notes") || null,
+    is_active: false
+  });
+  if (error) throw error;
+
+  const promptsPath = projectPath(workspaceSlug, projectId, "/prompts");
+  revalidatePath(promptsPath);
+  redirect(promptsPath);
+}
+
 export async function duplicatePromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);

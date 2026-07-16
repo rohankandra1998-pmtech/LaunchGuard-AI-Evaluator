@@ -1,7 +1,9 @@
 import { activatePromptVersion, duplicatePromptVersion, updatePromptVersion } from "@/app/actions";
 import { SubmitButton } from "@/components/submit-button";
-import { Badge, Card, EmptyState, Label, PageHeader, Select, TextArea, TextInput } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, Label, PageHeader, Select, TextArea, TextInput } from "@/components/ui";
+import { projectPath } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
+import { Plus } from "lucide-react";
 
 export default async function PromptsPage({ params }: { params: Promise<{ workspaceSlug: string; projectId: string }> }) {
   const { workspaceSlug, projectId } = await params;
@@ -11,7 +13,13 @@ export default async function PromptsPage({ params }: { params: Promise<{ worksp
 
   return (
     <div>
-      <PageHeader eyebrow="Prompt lab" title="Prompt Versions">View, edit, duplicate, and activate prompt versions. The active version is used by default when running AI outputs.</PageHeader>
+      <PageHeader
+        eyebrow="Prompt lab"
+        title="Prompt Versions"
+        actions={<ButtonLink href={projectPath(workspaceSlug, projectId, "/prompts/new")}><Plus className="h-4 w-4" />New prompt version</ButtonLink>}
+      >
+        Create, view, edit, duplicate, and activate prompt versions. The active version is used by default when running AI outputs.
+      </PageHeader>
       <div className="space-y-5">
         {versions?.length ? versions.map((version) => (
           <Card key={version.id}>

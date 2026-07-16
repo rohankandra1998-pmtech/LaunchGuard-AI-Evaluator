@@ -104,6 +104,7 @@ npm run build
 - `/workspaces/[workspaceSlug]/projects/new` - create an AI project
 - `/workspaces/[workspaceSlug]/projects/[projectId]` - project overview
 - `/workspaces/[workspaceSlug]/projects/[projectId]/prompts`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/prompts/new`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/criteria`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/dataset`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/review`
