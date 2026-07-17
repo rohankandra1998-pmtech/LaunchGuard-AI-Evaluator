@@ -3,6 +3,7 @@ import { generatedTestCasesSchema } from "@/lib/ai/schemas";
 import { getWorkspaceProject } from "@/lib/data";
 import { runStructuredOutput } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
+import { validateVariableSchema } from "@/lib/prompt-variables";
 
 export async function POST(request: Request) {
   try {
@@ -19,15 +20,23 @@ export async function POST(request: Request) {
     if (criteriaError) throw criteriaError;
     if (!prompt) return NextResponse.json({ error: "Active prompt version not found." }, { status: 404 });
 
+    const variableSchema = validateVariableSchema(prompt.variable_schema);
+    const variableKeys = variableSchema.map((variable) => variable.key);
     const result = await runStructuredOutput({
       schemaName: "generated_test_cases",
       schema: generatedTestCasesSchema,
       instructions:
-        "Generate 10-15 realistic test cases for a golden dataset. Include normal, edge, ambiguous, missing_context, adversarial, and tone_sensitive cases. Return structured JSON only.",
-      input: JSON.stringify({ project: context.project, active_prompt: prompt, evaluation_criteria: criteria }, null, 2)
+        `Generate 10-15 realistic test cases for a golden dataset. Include normal, edge, ambiguous, missing_context, adversarial, and tone_sensitive cases. variable_values may only use these active prompt variable keys: ${variableKeys.join(", ") || "none"}. Return structured JSON only.`,
+      input: JSON.stringify({ project: context.project, active_prompt: prompt, active_variable_schema: variableSchema, evaluation_criteria: criteria }, null, 2)
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      test_cases: result.test_cases.map((testCase) => ({
+        ...testCase,
+        variable_values: Object.fromEntries(Object.entries(testCase.variable_values).filter(([key]) => variableKeys.includes(key)))
+      }))
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }

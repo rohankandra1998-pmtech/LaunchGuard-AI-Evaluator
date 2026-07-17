@@ -30,6 +30,7 @@ export function DatasetWorkspace({
   const [generated, setGenerated] = useState<Record<string, unknown>[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const activeVariableKeys = (promptVersions.find((prompt) => prompt.is_active) || promptVersions[0])?.variable_schema?.map((variable) => variable.key) || project.variables;
 
   const visibleCases = useMemo(() => {
     return testCases.filter((testCase) => status === "all" || testCase.status === status);
@@ -86,7 +87,7 @@ export function DatasetWorkspace({
               <div><Label>Case type</Label><Select name="case_type"><option value="normal">normal</option><option value="edge">edge</option><option value="ambiguous">ambiguous</option><option value="missing_context">missing_context</option><option value="adversarial">adversarial</option><option value="tone_sensitive">tone_sensitive</option></Select></div>
               <div><Label>Expected answer</Label><TextInput name="expected_answer" /></div>
             </div>
-            <div><Label>Variable values JSON</Label><TextArea name="variable_values" defaultValue={JSON.stringify(Object.fromEntries(project.variables.map((key) => [key, ""])), null, 2)} className="font-mono" /></div>
+            <div><Label>Variable values JSON</Label><TextArea name="variable_values" defaultValue={JSON.stringify(Object.fromEntries(activeVariableKeys.map((key) => [key, ""])), null, 2)} className="font-mono" /></div>
             <SubmitButton>Add test case</SubmitButton>
           </form>
           <div>

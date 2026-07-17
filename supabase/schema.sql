@@ -40,6 +40,9 @@ create table public.prompt_versions (
   model_used text not null default 'gpt-4.1' check (model_used in ('gpt-4.1', 'gpt-5')),
   notes text,
   is_active boolean not null default false,
+  variable_schema jsonb not null default '[]'::jsonb
+    constraint prompt_versions_variable_schema_is_array
+    check (jsonb_typeof(variable_schema) = 'array'),
   created_at timestamptz not null default now(),
   unique(project_id, version_number)
 );

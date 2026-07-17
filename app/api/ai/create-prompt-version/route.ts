@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       schema: promptVNextSchema,
       instructions:
         "Create an improved system prompt from human error analysis. Preserve the product intent, add concrete rules, remove contradictions, and return structured JSON.",
-      input: JSON.stringify({ current_system_prompt: prompt.system_prompt, error_analysis_summary: report.summary, failed_examples: failedExamples, evaluation_criteria: criteria }, null, 2)
+      input: JSON.stringify({ current_system_prompt: prompt.system_prompt, variable_schema: prompt.variable_schema, error_analysis_summary: report.summary, failed_examples: failedExamples, evaluation_criteria: criteria }, null, 2)
     });
 
     return NextResponse.json(draft);

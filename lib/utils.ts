@@ -20,15 +20,6 @@ export function parseJsonObject(value: string | null | undefined) {
   return parsed as Record<string, string>;
 }
 
-export function interpolatePrompt(systemPrompt: string, variableValues: Record<string, string>) {
-  return Object.entries(variableValues).reduce((prompt, [key, val]) => {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return prompt
-      .replace(new RegExp(`{{\\s*${escaped}\\s*}}`, "g"), val)
-      .replace(new RegExp(`{\\s*${escaped}\\s*}`, "g"), val);
-  }, systemPrompt);
-}
-
 export function ratingLabelToScore(label: string) {
   if (label === "Good") return 3;
   if (label === "Average") return 2;

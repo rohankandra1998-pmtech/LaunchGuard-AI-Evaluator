@@ -7,11 +7,16 @@ import { assertUuid, assertWorkspaceSlug, getNextPromptVersionNumber, getWorkspa
 import { parseJsonObject, parseVariables, ratingLabelToScore } from "@/lib/utils";
 import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
+import { assertPromptPlaceholdersConfigured, legacyVariablesToSchema, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
 function formString(formData: FormData, key: string) {
   return String(formData.get(key) || "").trim();
+}
+
+function formValue(formData: FormData, key: string) {
+  return String(formData.get(key) || "");
 }
 
 function workspaceProjectFields(formData: FormData) {
@@ -62,9 +67,11 @@ export async function createProject(formData: FormData) {
   if (!workspace || workspace.id !== workspaceId) throw new Error("Workspace could not be validated.");
 
   const variables = parseVariables(formString(formData, "variables"));
+  const variableSchema = legacyVariablesToSchema(variables);
   const name = formString(formData, "name");
-  const systemPrompt = formString(formData, "system_prompt");
-  if (!name || !systemPrompt) throw new Error("Project name and initial system prompt are required.");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!name || !systemPrompt.trim()) throw new Error("Project name and initial system prompt are required.");
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -85,6 +92,7 @@ export async function createProject(formData: FormData) {
     project_id: project.id,
     version_number: 1,
     system_prompt: systemPrompt,
+    variable_schema: variableSchema,
     model_used: getProductModel(),
     notes: "Initial prompt version",
     is_active: true
@@ -162,15 +170,29 @@ export async function restoreProject(formData: FormData) {
 export async function updatePromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
-  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const context = await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const id = assertUuid(formString(formData, "id"), "Prompt version ID");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!systemPrompt.trim()) throw new Error("System prompt is required.");
+  const variableSchema = parseSerializedVariableSchema(formString(formData, "variable_schema"));
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
+
+  const { data: version, error: versionError } = await supabase
+    .from("prompt_versions")
+    .select("id, is_active")
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (versionError) throw versionError;
+  if (!version) throw new Error("Prompt version does not belong to this project.");
 
   const { data, error } = await supabase
     .from("prompt_versions")
     .update({
-      system_prompt: formString(formData, "system_prompt"),
+      system_prompt: systemPrompt,
       notes: formString(formData, "notes") || null,
-      model_used: validateModel(formString(formData, "model_used") || getProductModel())
+      model_used: validateModel(formString(formData, "model_used") || getProductModel()),
+      variable_schema: variableSchema
     })
     .eq("id", id)
     .eq("project_id", projectId)
@@ -178,15 +200,31 @@ export async function updatePromptVersion(formData: FormData) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Prompt version does not belong to this project.");
+  if (version.is_active) {
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .update({ variables: variableSchema.map((variable) => variable.key) })
+      .eq("id", projectId)
+      .eq("workspace_id", context.workspace.id)
+      .is("trashed_at", null)
+      .select("id")
+      .maybeSingle();
+    if (projectError) throw projectError;
+    if (!project) throw new Error("Active project variables could not be synchronized.");
+  }
+  const promptsPath = projectPath(workspaceSlug, projectId, "/prompts");
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
+  redirect(promptsPath);
 }
 
 export async function createPromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
-  const systemPrompt = formString(formData, "system_prompt");
-  if (!systemPrompt) throw new Error("System prompt is required.");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!systemPrompt.trim()) throw new Error("System prompt is required.");
+  const variableSchema = parseSerializedVariableSchema(formString(formData, "variable_schema"));
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
 
   const nextVersionNumber = await getNextPromptVersionNumber(supabase, projectId);
 
@@ -194,6 +232,7 @@ export async function createPromptVersion(formData: FormData) {
     project_id: projectId,
     version_number: nextVersionNumber,
     system_prompt: systemPrompt,
+    variable_schema: variableSchema,
     model_used: validateModel(formString(formData, "model_used")),
     notes: formString(formData, "notes") || null,
     is_active: false
@@ -221,6 +260,7 @@ export async function duplicatePromptVersion(formData: FormData) {
     project_id: projectId,
     version_number: nextVersionNumber,
     system_prompt: source.system_prompt,
+    variable_schema: validateVariableSchema(source.variable_schema),
     model_used: source.model_used,
     notes: `Duplicated from v${source.version_number}`,
     is_active: false
@@ -282,14 +322,32 @@ export async function deletePromptVersion(formData: FormData) {
 export async function activatePromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
-  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const context = await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const id = assertUuid(formString(formData, "id"), "Prompt version ID");
-  await assertRelatedRecord("prompt_versions", id, projectId, "Prompt version");
+  const { data: version, error: versionError } = await supabase
+    .from("prompt_versions")
+    .select("id, variable_schema")
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (versionError) throw versionError;
+  if (!version) throw new Error("Prompt version does not belong to this project.");
+  const variableSchema = validateVariableSchema(version.variable_schema);
 
   const { error: deactivateError } = await supabase.from("prompt_versions").update({ is_active: false }).eq("project_id", projectId);
   if (deactivateError) throw deactivateError;
   const { error } = await supabase.from("prompt_versions").update({ is_active: true }).eq("id", id).eq("project_id", projectId);
   if (error) throw error;
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .update({ variables: variableSchema.map((variable) => variable.key) })
+    .eq("id", projectId)
+    .eq("workspace_id", context.workspace.id)
+    .is("trashed_at", null)
+    .select("id")
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("Active project variables could not be synchronized.");
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
@@ -446,22 +504,24 @@ export async function savePromptDraft(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
-  const systemPrompt = formString(formData, "system_prompt");
-  if (!systemPrompt) throw new Error("Improved system prompt is required.");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!systemPrompt.trim()) throw new Error("Improved system prompt is required.");
 
-  const { data: latest, error: latestError } = await supabase
-    .from("prompt_versions")
-    .select("version_number")
-    .eq("project_id", projectId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .single();
+  const [{ data: latest, error: latestError }, { data: active, error: activeError }] = await Promise.all([
+    supabase.from("prompt_versions").select("version_number").eq("project_id", projectId).order("version_number", { ascending: false }).limit(1).single(),
+    supabase.from("prompt_versions").select("variable_schema").eq("project_id", projectId).eq("is_active", true).maybeSingle()
+  ]);
   if (latestError) throw latestError;
+  if (activeError) throw activeError;
+  if (!active) throw new Error("Active prompt version not found.");
+  const variableSchema = validateVariableSchema(active.variable_schema);
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
 
   const { error } = await supabase.from("prompt_versions").insert({
     project_id: projectId,
     version_number: latest.version_number + 1,
     system_prompt: systemPrompt,
+    variable_schema: variableSchema,
     model_used: getProductModel(),
     notes: formString(formData, "change_summary") || "Draft created from error analysis",
     is_active: false

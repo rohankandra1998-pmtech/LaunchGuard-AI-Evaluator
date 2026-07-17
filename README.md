@@ -61,7 +61,7 @@ The schema explicitly grants Data API access to `anon` and `authenticated`, enab
 
 ## Existing Supabase Project Migration
 
-Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, followed by `supabase/migrations/20260716120000_project_trash_retention.sql`.
+Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, `supabase/migrations/20260716120000_project_trash_retention.sql`, and `supabase/migrations/20260717221000_prompt_version_variable_schema.sql`.
 
 The migration:
 
@@ -79,7 +79,7 @@ For a repository linked with the Supabase CLI, apply committed migrations with:
 npx supabase db push
 ```
 
-For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
+For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration, and the prompt-variable migration must follow Trash retention. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
 
 ## Project Trash Lifecycle
 
@@ -109,6 +109,16 @@ limit 20;
 
 This is a public collaborative prototype with no authentication or ownership controls. Anyone with public access may move or restore projects during the recovery window. There is intentionally no user-facing action to bypass the 30-day window and delete a project immediately.
 
+## Variable-Aware Prompt Builder
+
+Every Prompt Version stores its own structured `variable_schema`, so historical versions remain reproducible when variables are added, removed, or changed. Supported types are `text`, `long_text`, `number`, `boolean`, and `select`. New placeholders use `{{variable_name}}`; legacy `{variable_name}` placeholders remain supported when compiling existing prompts.
+
+New and existing versions use the same Prompt Builder. It detects placeholders, blocks unresolved or malformed variables, warns about configured variables that are unused, and provides typed example-value controls. Example values feed the read-only Final Prompt Preview and apply configured defaults, but they are temporary builder state and are not stored with the Prompt Version.
+
+Run Test sends the compiled system prompt and a sample user message to the selected configured model. Sandbox runs are ephemeral: LaunchGuard does not create test cases, evaluation runs, generated outputs, reviews, ratings, or reports from them. Formal Golden Dataset evaluations remain separate and use the selected Prompt Version’s same variable schema and compiler.
+
+`projects.variables` remains as a legacy list of active variable keys. Prompt Version 1 receives structured definitions from that list, the migration backfills existing versions, and activating or editing the active version synchronizes the legacy list. Creating or editing an inactive draft does not change `projects.variables`.
+
 ## Local Development
 
 ```bash
@@ -137,6 +147,7 @@ npm run build
 - `/workspaces/[workspaceSlug]/projects/[projectId]` - project overview
 - `/workspaces/[workspaceSlug]/projects/[projectId]/prompts`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/prompts/new`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/prompts/[versionId]/edit`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/criteria`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/dataset`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/review`
@@ -150,6 +161,7 @@ npm run build
 - `/api/ai/generate-output`
 - `/api/ai/error-analysis`
 - `/api/ai/create-prompt-version`
+- `/api/ai/test-prompt` - ephemeral Prompt Builder sandbox; does not persist evaluation data
 - `/api/export/project-csv`
 
 Every AI route validates workspace, project, prompt-version, and test-case relationships before using the server-side OpenAI key.

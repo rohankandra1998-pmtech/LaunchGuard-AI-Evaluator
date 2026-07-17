@@ -7,19 +7,21 @@ export function SubmitButton({
   children,
   pendingText = "Saving...",
   className = "",
-  confirmMessage
+  confirmMessage,
+  disabled = false
 }: {
   children: React.ReactNode;
   pendingText?: string;
   className?: string;
   confirmMessage?: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
 
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       onClick={(event) => {
         if (confirmMessage && !window.confirm(confirmMessage)) event.preventDefault();
       }}

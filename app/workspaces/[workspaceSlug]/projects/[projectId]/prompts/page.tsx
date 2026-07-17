@@ -1,48 +1,47 @@
-import { activatePromptVersion, duplicatePromptVersion, updatePromptVersion } from "@/app/actions";
+import { notFound } from "next/navigation";
+import { Plus } from "lucide-react";
+import { activatePromptVersion, duplicatePromptVersion } from "@/app/actions";
 import { DeletePromptVersionDialog } from "@/components/delete-prompt-version-dialog";
 import { SubmitButton } from "@/components/submit-button";
-import { Badge, ButtonLink, Card, EmptyState, Label, PageHeader, Select, TextArea, TextInput } from "@/components/ui";
-import { projectPath } from "@/lib/data";
+import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { getWorkspaceProject, projectPath } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { Plus } from "lucide-react";
 
 export default async function PromptsPage({ params }: { params: Promise<{ workspaceSlug: string; projectId: string }> }) {
   const { workspaceSlug, projectId } = await params;
   const supabase = await createClient();
-  const { data: versions } = await supabase.from("prompt_versions").select("*").eq("project_id", projectId).order("version_number");
-  const hidden = <><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="project_id" value={projectId} /></>;
+  const context = await getWorkspaceProject(supabase, workspaceSlug, projectId);
+  if (!context) notFound();
+  const { data: versions, error } = await supabase.from("prompt_versions").select("*").eq("project_id", projectId).order("version_number");
+  if (error) throw error;
 
   return (
     <div>
-      <PageHeader
-        eyebrow="Prompt lab"
-        title="Prompt Versions"
-        actions={<ButtonLink href={projectPath(workspaceSlug, projectId, "/prompts/new")}><Plus className="h-4 w-4" />New prompt version</ButtonLink>}
-      >
-        Create, view, edit, duplicate, and activate prompt versions. The active version is used by default when running AI outputs.
+      <PageHeader eyebrow="Prompt lab" title="Prompt Versions" actions={<ButtonLink href={projectPath(workspaceSlug, projectId, "/prompts/new")}><Plus className="h-4 w-4" />New Prompt Version</ButtonLink>}>
+        Create, inspect, edit, duplicate, and activate version-specific prompts and variables. The active version is used by default for formal evaluations.
       </PageHeader>
       <div className="space-y-5">
-        {versions?.length ? versions.map((version) => (
-          <Card key={version.id}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3"><h2 className="text-lg font-semibold text-white">v{version.version_number}</h2>{version.is_active ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}</div>
-              <div className="flex flex-wrap gap-2">
-                <form action={duplicatePromptVersion}>{hidden}<input type="hidden" name="id" value={version.id} /><SubmitButton className="bg-white/10 text-white hover:bg-white/15" pendingText="Duplicating...">Duplicate</SubmitButton></form>
-                {!version.is_active ? <DeletePromptVersionDialog workspaceSlug={workspaceSlug} projectId={projectId} versionId={version.id} versionNumber={version.version_number} /> : null}
-                {!version.is_active ? <form action={activatePromptVersion}>{hidden}<input type="hidden" name="id" value={version.id} /><SubmitButton pendingText="Activating...">Mark active</SubmitButton></form> : null}
+        {versions?.length ? versions.map((version) => {
+          const variableCount = Array.isArray(version.variable_schema) ? version.variable_schema.length : 0;
+          return (
+            <Card key={version.id}>
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-semibold text-white">Prompt Version v{version.version_number}</h2>{version.is_active ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}<Badge tone="cyan">{version.model_used}</Badge></div>
+                  <p className="mt-3 text-sm text-slate-300">{version.notes || "No change summary provided."}</p>
+                  <p className="mt-3 text-xs text-slate-500">{variableCount} variable{variableCount === 1 ? "" : "s"}</p>
+                  <pre className="mt-4 max-h-24 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-white/10 bg-slate-950/35 p-4 text-xs leading-5 text-slate-300">{version.system_prompt}</pre>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, `/prompts/${version.id}/edit`)}>Edit Version</ButtonLink>
+                  <form action={duplicatePromptVersion}><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="id" value={version.id} /><SubmitButton className="bg-white/10 text-white hover:bg-white/15" pendingText="Duplicating...">Duplicate</SubmitButton></form>
+                  {!version.is_active ? <DeletePromptVersionDialog workspaceSlug={workspaceSlug} projectId={projectId} versionId={version.id} versionNumber={version.version_number} /> : null}
+                  {!version.is_active ? <form action={activatePromptVersion}><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="id" value={version.id} /><SubmitButton pendingText="Activating...">Mark Active</SubmitButton></form> : null}
+                </div>
               </div>
-            </div>
-            <form action={updatePromptVersion} className="grid gap-4">
-              {hidden}<input type="hidden" name="id" value={version.id} />
-              <div className="grid gap-4 md:grid-cols-2">
-                <div><Label>Model used</Label><Select name="model_used" defaultValue={version.model_used}><option value="gpt-4.1">gpt-4.1</option><option value="gpt-5">gpt-5</option></Select></div>
-                <div><Label>Notes / change summary</Label><TextInput name="notes" defaultValue={version.notes || ""} /></div>
-              </div>
-              <div><Label>System prompt</Label><TextArea name="system_prompt" defaultValue={version.system_prompt} className="min-h-60 font-mono" /></div>
-              <SubmitButton pendingText="Saving prompt...">Save changes</SubmitButton>
-            </form>
-          </Card>
-        )) : <EmptyState title="No prompt versions">Create a project to generate Prompt Version 1 automatically.</EmptyState>}
+            </Card>
+          );
+        }) : <EmptyState title="No prompt versions">Create a project to generate Prompt Version 1 automatically.</EmptyState>}
       </div>
     </div>
   );

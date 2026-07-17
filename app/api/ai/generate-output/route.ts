@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { assertUuid, getWorkspaceProject } from "@/lib/data";
 import { generateProductOutput, getProductModel, getReasoningModel } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
-import { interpolatePrompt } from "@/lib/utils";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
+import { compilePrompt, PromptVariableError, validateVariableSchema } from "@/lib/prompt-variables";
 
 export async function POST(request: Request) {
   try {
@@ -34,21 +34,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "One or more test cases do not belong to this project." }, { status: 400 });
     }
 
+    const variableSchema = validateVariableSchema(prompt.variable_schema);
+    const compiledCases = testCases!.map((testCase) => ({
+      testCase,
+      systemPrompt: compilePrompt(
+        prompt.system_prompt,
+        variableSchema,
+        testCase.variable_values && typeof testCase.variable_values === "object" && !Array.isArray(testCase.variable_values) ? testCase.variable_values : {}
+      ).compiledPrompt
+    }));
+
     const { data: run, error: runError } = await supabase
       .from("eval_runs")
       .insert({
         project_id,
         prompt_version_id: promptId,
         model_used: selectedModel,
-        test_case_count: testCases!.length
+        test_case_count: compiledCases.length
       })
       .select("id")
       .single();
     if (runError) throw runError;
 
     const results = [];
-    for (const testCase of testCases!) {
-      const systemPrompt = interpolatePrompt(prompt.system_prompt, testCase.variable_values || {});
+    for (const { testCase, systemPrompt } of compiledCases) {
       const output = await generateProductOutput({ systemPrompt, userInput: testCase.user_input, model: selectedModel });
       const { error: outputError } = await supabase.from("generated_outputs").insert({
         project_id,
@@ -72,6 +81,7 @@ export async function POST(request: Request) {
     revalidateProjectActivityPaths(workspace_slug, project_id, "/dataset", "/review", "/results");
     return NextResponse.json({ run_id: run.id, results });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const status = error instanceof PromptVariableError ? 400 : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status });
   }
 }

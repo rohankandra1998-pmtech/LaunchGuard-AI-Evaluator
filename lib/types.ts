@@ -4,6 +4,17 @@ export type RatingLabel = "Good" | "Average" | "Bad";
 export type Severity = "Low" | "Medium" | "High";
 export type TestCaseStatus = "draft" | "generated" | "reviewed";
 export type CaseType = "normal" | "edge" | "ambiguous" | "missing_context" | "adversarial" | "tone_sensitive";
+export type PromptVariableType = "text" | "long_text" | "number" | "boolean" | "select";
+
+export type PromptVariable = {
+  key: string;
+  label: string;
+  type: PromptVariableType;
+  required: boolean;
+  default_value: string | number | boolean | null;
+  description: string | null;
+  options: string[];
+};
 
 export type Workspace = {
   id: string;
@@ -36,6 +47,7 @@ export type PromptVersion = {
   model_used: string;
   notes: string | null;
   is_active: boolean;
+  variable_schema: PromptVariable[];
   created_at: string;
 };
 
@@ -57,7 +69,7 @@ export type TestCase = {
   project_id: string;
   user_input: string;
   case_type: CaseType | null;
-  variable_values: Record<string, string>;
+  variable_values: Record<string, string | number | boolean | null>;
   expected_answer: string | null;
   generated_ai_output: string | null;
   prompt_version_id: string | null;
