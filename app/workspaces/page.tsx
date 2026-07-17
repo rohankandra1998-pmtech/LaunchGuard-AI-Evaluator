@@ -7,11 +7,12 @@ export const dynamic = "force-dynamic";
 
 export default async function WorkspacesPage() {
   const supabase = await createClient();
-  const { data: workspaces, error } = await supabase
-    .from("workspaces")
-    .select("*, projects(id, test_cases(id, status))")
-    .order("updated_at", { ascending: false });
+  const [{ data: workspaces, error }, { data: activeProjects, error: projectsError }] = await Promise.all([
+    supabase.from("workspaces").select("*").order("updated_at", { ascending: false }),
+    supabase.from("projects").select("id, workspace_id, test_cases(id, status)").is("trashed_at", null)
+  ]);
   if (error) throw error;
+  if (projectsError) throw projectsError;
 
   return (
     <div>
@@ -26,9 +27,9 @@ export default async function WorkspacesPage() {
       {workspaces?.length ? (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {workspaces.map((workspace) => {
-            const projects = workspace.projects || [];
-            const testCases = projects.flatMap((project: { test_cases?: Array<{ id: string; status: string }> }) => project.test_cases || []);
-            const reviewed = testCases.filter((testCase: { status: string }) => testCase.status === "reviewed").length;
+            const projects = activeProjects?.filter((project) => project.workspace_id === workspace.id) || [];
+            const testCases = projects.flatMap((project) => project.test_cases || []);
+            const reviewed = testCases.filter((testCase) => testCase.status === "reviewed").length;
             return (
               <Link key={workspace.id} href={`/workspaces/${workspace.slug}`} className="group block">
                 <Card className="h-full transition group-hover:border-guard-cyan/40 group-hover:bg-white/[0.065]">

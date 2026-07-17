@@ -33,6 +33,7 @@ export async function getWorkspaceProject(supabase: SupabaseClient, workspaceSlu
     .select("*")
     .eq("id", id)
     .eq("workspace_id", workspace.id)
+    .is("trashed_at", null)
     .maybeSingle();
   if (error) throw error;
   if (!project) return null;

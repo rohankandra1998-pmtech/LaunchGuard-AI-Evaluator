@@ -98,6 +98,67 @@ export async function createProject(formData: FormData) {
   redirect(projectPath(workspace.slug, project.id));
 }
 
+export async function moveProjectToTrash(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  const workspace = await getWorkspace(supabase, workspaceSlug);
+  if (!workspace) throw new Error("Workspace could not be validated.");
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .is("trashed_at", null)
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("Project is unavailable or already in Trash.");
+
+  const { data: movedProject, error } = await supabase
+    .from("projects")
+    .update({ trashed_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .is("trashed_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!movedProject) throw new Error("Project could not be moved to Trash.");
+
+  revalidateProjectActivityPaths(workspaceSlug, projectId);
+  redirect(`/workspaces/${workspaceSlug}`);
+}
+
+export async function restoreProject(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  const workspace = await getWorkspace(supabase, workspaceSlug);
+  if (!workspace) throw new Error("Workspace could not be validated.");
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .not("trashed_at", "is", null)
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("Project is unavailable or already restored.");
+
+  const { data: restoredProject, error } = await supabase
+    .from("projects")
+    .update({ trashed_at: null })
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .not("trashed_at", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!restoredProject) throw new Error("Project could not be restored.");
+
+  revalidateProjectActivityPaths(workspaceSlug, projectId);
+}
+
 export async function updatePromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);

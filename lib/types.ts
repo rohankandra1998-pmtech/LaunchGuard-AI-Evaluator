@@ -25,6 +25,7 @@ export type Project = {
   variables: string[];
   created_at: string;
   updated_at: string;
+  trashed_at: string | null;
 };
 
 export type PromptVersion = {

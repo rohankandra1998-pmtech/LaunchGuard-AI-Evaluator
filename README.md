@@ -13,6 +13,8 @@ The product is organized as:
 
 This prototype has no authentication, ownership roles, invitations, private workspaces, request quotas, or usage caps. All workspaces and project data are publicly readable and publicly editable through the publishable Supabase key.
 
+That includes project lifecycle controls: anyone with public access can currently move a project to Trash or restore it. These actions are not permission-protected.
+
 > Do not store sensitive, confidential, personal, regulated, or production-secret information in this prototype.
 
 ## Tech Stack
@@ -50,15 +52,16 @@ Never rename `OPENAI_API_KEY` with a `NEXT_PUBLIC_` prefix. A Supabase service-r
 1. Create a new Supabase project.
 2. Open the Supabase SQL Editor.
 3. Run the complete contents of `supabase/schema.sql` once.
-4. Confirm the `workspaces` and project-related tables appear in the Table Editor.
-5. Add the project URL and publishable key to `.env.local`.
-6. Optionally run `supabase/seed.sql` in the SQL Editor to add a demonstration workspace and project.
+4. Confirm that Supabase Cron (`pg_cron`) is available in the project and that the schema created the daily purge job.
+5. Confirm the `workspaces` and project-related tables appear in the Table Editor.
+6. Add the project URL and publishable key to `.env.local`.
+7. Optionally run `supabase/seed.sql` in the SQL Editor to add a demonstration workspace and project.
 
 The schema explicitly grants Data API access to `anon` and `authenticated`, enables RLS on every exposed table, and applies public collaborative CRUD policies. It also creates foreign-key indexes and a unique database-generated workspace slug.
 
 ## Existing Supabase Project Migration
 
-Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order, including `supabase/migrations/20260715223000_propagate_project_activity.sql`.
+Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, followed by `supabase/migrations/20260716120000_project_trash_retention.sql`.
 
 The migration:
 
@@ -76,7 +79,35 @@ For a repository linked with the Supabase CLI, apply committed migrations with:
 npx supabase db push
 ```
 
-For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must also be executed there so project child changes update the workspace directory. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
+For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
+
+## Project Trash Lifecycle
+
+Active projects appear in workspace grids and remain available throughout the evaluation workflow. Moving a project to Trash hides it from active workspace content and blocks its project pages, editing actions, AI routes, review tools, reports, and exports. Its prompt versions, criteria, test cases, runs, outputs, reviews, ratings, and reports remain attached and become available again if the project is restored.
+
+Trashed projects are recoverable for 30 days from the workspace-scoped Trash page. Restoration only clears `trashed_at`; it does not copy or recreate child records. Once per day at 03:00, the database job `launchguard-purge-trashed-projects` calls `public.purge_expired_trashed_projects()` and permanently deletes projects that have been in Trash for at least 30 days. Existing cascading foreign keys remove their associated evaluation data.
+
+Verify the scheduled job in the Supabase SQL Editor:
+
+```sql
+select jobid, jobname, schedule, command, active
+from cron.job
+where jobname = 'launchguard-purge-trashed-projects';
+```
+
+Inspect recent executions with:
+
+```sql
+select jobid, status, return_message, start_time, end_time
+from cron.job_run_details
+where jobid = (
+  select jobid from cron.job where jobname = 'launchguard-purge-trashed-projects'
+)
+order by start_time desc
+limit 20;
+```
+
+This is a public collaborative prototype with no authentication or ownership controls. Anyone with public access may move or restore projects during the recovery window. There is intentionally no user-facing action to bypass the 30-day window and delete a project immediately.
 
 ## Local Development
 
@@ -101,6 +132,7 @@ npm run build
 - `/workspaces` - public workspace directory
 - `/workspaces/new` - create a workspace
 - `/workspaces/[workspaceSlug]` - workspace detail and project list
+- `/workspaces/[workspaceSlug]/trash` - recoverable projects awaiting automatic deletion
 - `/workspaces/[workspaceSlug]/projects/new` - create an AI project
 - `/workspaces/[workspaceSlug]/projects/[projectId]` - project overview
 - `/workspaces/[workspaceSlug]/projects/[projectId]/prompts`

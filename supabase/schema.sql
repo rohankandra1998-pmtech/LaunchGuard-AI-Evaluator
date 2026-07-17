@@ -2,6 +2,7 @@
 -- All data is intentionally public and collaborative in this prototype.
 
 create extension if not exists "pgcrypto";
+create extension if not exists pg_cron;
 
 create type public.test_case_status as enum ('draft', 'generated', 'reviewed');
 create type public.rating_label as enum ('Good', 'Average', 'Bad');
@@ -27,7 +28,8 @@ create table public.projects (
   description text,
   variables jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  trashed_at timestamptz
 );
 
 create table public.prompt_versions (
@@ -123,6 +125,9 @@ create table public.error_analysis_reports (
 );
 
 create index projects_workspace_updated_idx on public.projects(workspace_id, updated_at desc);
+create index projects_workspace_active_updated_idx on public.projects(workspace_id, updated_at desc) where trashed_at is null;
+create index projects_workspace_trashed_at_idx on public.projects(workspace_id, trashed_at desc) where trashed_at is not null;
+create index projects_trashed_at_idx on public.projects(trashed_at) where trashed_at is not null;
 create index prompt_versions_project_created_idx on public.prompt_versions(project_id, created_at desc);
 create index evaluation_criteria_project_created_idx on public.evaluation_criteria(project_id, created_at desc);
 create index test_cases_project_status_idx on public.test_cases(project_id, status, created_at desc);
@@ -147,6 +152,46 @@ as $$
 begin
   new.updated_at = now();
   return new;
+end;
+$$;
+
+create or replace function public.purge_expired_trashed_projects()
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  deleted_count bigint;
+begin
+  delete from public.projects
+  where trashed_at is not null
+    and trashed_at <= now() - interval '30 days';
+
+  get diagnostics deleted_count = row_count;
+  return deleted_count;
+end;
+$$;
+
+revoke execute on function public.purge_expired_trashed_projects() from public;
+revoke execute on function public.purge_expired_trashed_projects() from anon;
+revoke execute on function public.purge_expired_trashed_projects() from authenticated;
+
+do $$
+declare
+  existing_job_id bigint;
+begin
+  for existing_job_id in
+    select jobid from cron.job where jobname = 'launchguard-purge-trashed-projects'
+  loop
+    perform cron.unschedule(existing_job_id);
+  end loop;
+
+  perform cron.schedule(
+    'launchguard-purge-trashed-projects',
+    '0 3 * * *',
+    'select public.purge_expired_trashed_projects();'
+  );
 end;
 $$;
 

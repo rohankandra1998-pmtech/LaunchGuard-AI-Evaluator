@@ -11,6 +11,7 @@ export function revalidateProjectActivityPaths(
   const paths = new Set([
     "/workspaces",
     `/workspaces/${workspaceSlug}`,
+    `/workspaces/${workspaceSlug}/trash`,
     projectPath(workspaceSlug, projectId),
     ...projectSectionPaths.map((sectionPath) => projectPath(workspaceSlug, projectId, sectionPath))
   ]);
