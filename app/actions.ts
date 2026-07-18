@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { assertUuid, assertWorkspaceSlug, getNextPromptVersionNumber, getWorkspace, projectPath, requireWorkspaceProject } from "@/lib/data";
-import { parseJsonObject, parseVariables, ratingLabelToScore } from "@/lib/utils";
+import { parseJsonObject, ratingLabelToScore } from "@/lib/utils";
 import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
-import { assertPromptPlaceholdersConfigured, legacyVariablesToSchema, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
+import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
@@ -66,12 +66,14 @@ export async function createProject(formData: FormData) {
   const workspace = await getWorkspace(supabase, workspaceSlug);
   if (!workspace || workspace.id !== workspaceId) throw new Error("Workspace could not be validated.");
 
-  const variables = parseVariables(formString(formData, "variables"));
-  const variableSchema = legacyVariablesToSchema(variables);
   const name = formString(formData, "name");
   const systemPrompt = formValue(formData, "system_prompt");
-  if (!name || !systemPrompt.trim()) throw new Error("Project name and initial system prompt are required.");
+  if (!name) throw new Error("Project name is required.");
+  if (!systemPrompt.trim()) throw new Error("Initial system prompt is required.");
+  const model = validateModel(formString(formData, "model_used"));
+  const variableSchema = parseSerializedVariableSchema(formString(formData, "variable_schema"));
   assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
+  const variableKeys = variableSchema.map((variable) => variable.key);
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -82,7 +84,7 @@ export async function createProject(formData: FormData) {
       goal: formString(formData, "goal"),
       target_user: formString(formData, "target_user"),
       description: formString(formData, "description") || null,
-      variables
+      variables: variableKeys
     })
     .select("id")
     .single();
@@ -93,8 +95,8 @@ export async function createProject(formData: FormData) {
     version_number: 1,
     system_prompt: systemPrompt,
     variable_schema: variableSchema,
-    model_used: getProductModel(),
-    notes: "Initial prompt version",
+    model_used: model,
+    notes: formString(formData, "notes") || "Initial prompt version",
     is_active: true
   });
   if (promptError) {

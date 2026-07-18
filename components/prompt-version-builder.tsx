@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, FlaskConical, Pencil, Plus, Variable } from "lucide-react";
-import { createPromptVersion, updatePromptVersion } from "@/app/actions";
+import { createProject, createPromptVersion, updatePromptVersion } from "@/app/actions";
 import { PromptVariableDialog } from "@/components/prompt-variable-dialog";
 import { SubmitButton } from "@/components/submit-button";
 import { Badge, ButtonLink, Card, Select, TextArea, TextInput } from "@/components/ui";
@@ -11,33 +11,62 @@ import type { PromptVariable } from "@/lib/types";
 
 type DialogState = { index?: number; suggestedKey?: string } | null;
 
-export function PromptVersionBuilder({
-  workspaceSlug,
-  projectId,
-  mode,
-  versionId,
-  versionNumber,
-  isActive = false,
-  initialModel,
-  initialNotes,
-  initialSystemPrompt,
-  initialVariableSchema,
-  models,
-  cancelHref
-}: {
+type CommonBuilderProps = {
   workspaceSlug: string;
-  projectId: string;
-  mode: "create" | "edit";
-  versionId?: string;
   versionNumber: number;
-  isActive?: boolean;
   initialModel: string;
   initialNotes: string;
   initialSystemPrompt: string;
   initialVariableSchema: PromptVariable[];
   models: string[];
   cancelHref: string;
-}) {
+};
+
+type PromptVersionBuilderProps =
+  | (CommonBuilderProps & {
+      mode: "project-create";
+      workspaceId: string;
+      projectId?: never;
+      versionId?: never;
+      versionNumber: 1;
+      isActive?: never;
+      projectContext: ReactNode;
+    })
+  | (CommonBuilderProps & {
+      mode: "version-create";
+      projectId: string;
+      workspaceId?: never;
+      versionId?: never;
+      isActive?: never;
+      projectContext?: never;
+    })
+  | (CommonBuilderProps & {
+      mode: "version-edit";
+      projectId: string;
+      workspaceId?: never;
+      versionId: string;
+      isActive: boolean;
+      projectContext?: never;
+    });
+
+export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
+  const {
+    workspaceSlug,
+    mode,
+    versionNumber,
+    initialModel,
+    initialNotes,
+    initialSystemPrompt,
+    initialVariableSchema,
+    models,
+    cancelHref
+  } = props;
+  const projectId = mode === "project-create" ? undefined : props.projectId;
+  const versionId = mode === "version-edit" ? props.versionId : undefined;
+  const isActive = mode === "version-edit" ? props.isActive : false;
+  const formAction = mode === "project-create" ? createProject : mode === "version-create" ? createPromptVersion : updatePromptVersion;
+  const submitLabel = mode === "project-create" ? "Create AI Project" : mode === "version-create" ? "Create Version" : "Save Changes";
+  const pendingLabel = mode === "project-create" ? "Creating AI Project..." : mode === "version-create" ? "Creating Version..." : "Saving Changes...";
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const [model, setModel] = useState(initialModel);
   const [notes, setNotes] = useState(initialNotes);
@@ -50,7 +79,7 @@ export function PromptVersionBuilder({
   const [testPending, setTestPending] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
   const [testOutput, setTestOutput] = useState<string | null>(null);
-  const [testedPrompt, setTestedPrompt] = useState<string | null>(null);
+  const [testedFingerprint, setTestedFingerprint] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const detected = useMemo(() => extractPromptPlaceholders(systemPrompt), [systemPrompt]);
@@ -59,6 +88,7 @@ export function PromptVersionBuilder({
   const malformed = useMemo(() => findMalformedPlaceholders(systemPrompt), [systemPrompt]);
   const schemaResult = useMemo(() => promptVariableArraySchema.safeParse(variables), [variables]);
   const preview = useMemo(() => compilePromptPreview(systemPrompt, variables, variableValues), [systemPrompt, variables, variableValues]);
+  const currentTestFingerprint = JSON.stringify({ model, systemPrompt, variables, variableValues, userInput });
   const blockingMessages = [
     ...(!systemPrompt.trim() ? ["System prompt is required."] : []),
     ...(unresolved.length ? [`Configure unresolved variables: ${unresolved.join(", ")}.`] : []),
@@ -115,22 +145,31 @@ export function PromptVersionBuilder({
     setTestError(null);
     setTestOutput(null);
     try {
+      const payload: {
+        workspace_slug: string;
+        project_id?: string;
+        model: string;
+        system_prompt: string;
+        variable_schema: PromptVariable[];
+        variable_values: Record<string, unknown>;
+        user_input: string;
+      } = {
+        workspace_slug: workspaceSlug,
+        model,
+        system_prompt: systemPrompt,
+        variable_schema: variables,
+        variable_values: variableValues,
+        user_input: userInput
+      };
+      if (projectId) payload.project_id = projectId;
       const response = await fetch("/api/ai/test-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspace_slug: workspaceSlug,
-          project_id: projectId,
-          model,
-          system_prompt: systemPrompt,
-          variable_schema: variables,
-          variable_values: variableValues,
-          user_input: userInput
-        })
+        body: JSON.stringify(payload)
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "The sandbox test failed.");
-      setTestedPrompt(result.compiled_prompt);
+      setTestedFingerprint(currentTestFingerprint);
       setTestOutput(result.output);
     } catch (error) {
       setTestError(error instanceof Error ? error.message : "The sandbox test failed.");
@@ -142,7 +181,7 @@ export function PromptVersionBuilder({
   return (
     <>
       <form
-        action={mode === "create" ? createPromptVersion : updatePromptVersion}
+        action={formAction}
         onSubmit={(event) => {
           if (!canSave) {
             event.preventDefault();
@@ -152,12 +191,16 @@ export function PromptVersionBuilder({
         className="space-y-6"
       >
         <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-        <input type="hidden" name="project_id" value={projectId} />
+        {mode === "project-create" ? <input type="hidden" name="workspace_id" value={props.workspaceId} /> : null}
+        {projectId ? <input type="hidden" name="project_id" value={projectId} /> : null}
         {versionId ? <input type="hidden" name="id" value={versionId} /> : null}
         <input type="hidden" name="variable_schema" value={JSON.stringify(variables)} />
 
+        {mode === "project-create" ? props.projectContext : null}
+
         <Card>
-          <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-semibold text-white">Prompt Version v{versionNumber}</h2>{isActive ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}</div>
+          <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-semibold text-white">Prompt Version v{versionNumber}</h2>{mode === "project-create" ? <Badge tone="good">Will be Active</Badge> : isActive ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}</div>
+          {mode === "project-create" ? <p className="mt-2 text-sm text-slate-400">This initial version is saved only when you create the project.</p> : null}
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium text-slate-200">Model<Select required name="model_used" value={model} onChange={(event) => setModel(event.target.value)} className="mt-2">{models.map((availableModel) => <option key={availableModel} value={availableModel}>{availableModel}</option>)}</Select></label>
             <label className="text-sm font-medium text-slate-200">Notes / change summary<TextInput name="notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} className="mt-2" placeholder="What should this version improve?" /></label>
@@ -167,7 +210,7 @@ export function PromptVersionBuilder({
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-white">System Prompt Builder</h2><p className="mt-1 text-sm text-slate-400">Use {"{{variable_name}}"} for version-specific inputs.</p></div><span className="text-xs text-slate-500">{systemPrompt.length.toLocaleString()} characters</span></div>
-            <label className="mt-5 block text-sm font-medium text-slate-200">System Prompt<TextArea ref={promptRef} required name="system_prompt" value={systemPrompt} onChange={(event) => { setSystemPrompt(event.target.value); setTestOutput(null); }} className="mt-2 min-h-96 resize-y font-mono leading-6" placeholder="Write the system prompt for this version..." /></label>
+            <label className="mt-5 block text-sm font-medium text-slate-200">System Prompt<TextArea ref={promptRef} required name="system_prompt" value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} className="mt-2 min-h-96 resize-y font-mono leading-6" placeholder="Write the system prompt for this version..." /></label>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
               {variables.length ? <><Select aria-label="Variable to insert" value={insertKey} onChange={(event) => setInsertKey(event.target.value)} className="sm:max-w-xs">{variables.map((variable) => <option key={variable.key} value={variable.key}>{variable.label} — {`{{${variable.key}}}`}</option>)}</Select><button type="button" onClick={insertVariable} className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-guard-cyan/30 bg-guard-cyan/10 px-4 py-2 text-sm font-semibold text-guard-cyan hover:bg-guard-cyan/15"><Variable className="h-4 w-4" />Insert Variable</button></> : <p className="text-sm text-slate-400">Add a variable before inserting a placeholder.</p>}
               <button type="button" onClick={() => openAdd()} className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"><Plus className="h-4 w-4" />Add Variable</button>
@@ -193,16 +236,16 @@ export function PromptVersionBuilder({
 
         <Card>
           <h2 className="text-lg font-semibold text-white">Example Variable Values</h2><p className="mt-1 text-sm text-slate-400">Temporary values for preview and sandbox testing. They are not saved with the version.</p>
-          {variables.length ? <div className="mt-5 grid gap-4 md:grid-cols-2">{variables.map((variable) => <VariableValueField key={variable.key} variable={variable} value={variableValues[variable.key]} onChange={(value) => { setVariableValues((current) => ({ ...current, [variable.key]: value })); setTestOutput(null); }} />)}</div> : <p className="mt-4 text-sm text-slate-500">This prompt has no example values.</p>}
+          {variables.length ? <div className="mt-5 grid gap-4 md:grid-cols-2">{variables.map((variable) => <VariableValueField key={variable.key} variable={variable} value={variableValues[variable.key]} onChange={(value) => setVariableValues((current) => ({ ...current, [variable.key]: value }))} />)}</div> : <p className="mt-4 text-sm text-slate-500">This prompt has no example values.</p>}
         </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card><h2 className="text-lg font-semibold text-white">Final Prompt Preview</h2><p className="mt-1 text-sm text-slate-400">The exact compiled system prompt sent to the model.</p>{preview.errors.length ? <div className="mt-4 rounded-md border border-guard-amber/30 bg-guard-amber/10 p-3 text-sm text-guard-amber">{preview.errors.join(" ")}</div> : null}<pre className="mt-4 min-h-64 whitespace-pre-wrap break-words rounded-md border border-white/10 bg-slate-950/50 p-4 text-sm leading-6 text-slate-200">{preview.compiledPrompt || "Your compiled prompt will appear here."}</pre></Card>
-          <Card><h2 className="text-lg font-semibold text-white">Test with a user message</h2><p className="mt-1 text-sm text-slate-400">Run an ephemeral sandbox test. It is not added to the Golden Dataset or evaluation results.</p><label className="mt-4 block text-sm font-medium text-slate-200">Sample user message<TextArea value={userInput} onChange={(event) => { setUserInput(event.target.value); setTestOutput(null); }} maxLength={8000} className="mt-2 min-h-32" placeholder="Enter a realistic user message..." /></label><div className="mt-3 flex items-center justify-between text-xs text-slate-500"><span>{userInput.length.toLocaleString()} / 8,000</span><button type="button" onClick={runTest} disabled={!canRun} className="focus-ring inline-flex items-center gap-2 rounded-md bg-guard-cyan px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"><FlaskConical className="h-4 w-4" />{testPending ? "Running Test..." : "Run Test"}</button></div><div className="mt-4" aria-live="polite">{testError ? <p className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-red-200">{testError}</p> : null}{testOutput ? <div><p className="text-sm font-semibold text-white">Model response</p><div className="mt-2 whitespace-pre-wrap break-words rounded-md border border-guard-cyan/20 bg-slate-950/50 p-4 text-sm leading-6 text-slate-200">{testOutput}</div>{testedPrompt !== preview.compiledPrompt ? <p className="mt-2 text-xs text-guard-amber">Inputs changed after this test. Run it again for the current preview.</p> : null}</div> : null}</div></Card>
+          <Card><h2 className="text-lg font-semibold text-white">Test with a user message</h2><p className="mt-1 text-sm text-slate-400">Run an ephemeral sandbox test. It is not added to the Golden Dataset or evaluation results.</p><label className="mt-4 block text-sm font-medium text-slate-200">Sample user message<TextArea value={userInput} onChange={(event) => setUserInput(event.target.value)} maxLength={8000} className="mt-2 min-h-32" placeholder="Enter a realistic user message..." /></label><div className="mt-3 flex items-center justify-between text-xs text-slate-500"><span>{userInput.length.toLocaleString()} / 8,000</span><button type="button" onClick={runTest} disabled={!canRun} className="focus-ring inline-flex items-center gap-2 rounded-md bg-guard-cyan px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"><FlaskConical className="h-4 w-4" />{testPending ? "Running Test..." : "Run Test"}</button></div><div className="mt-4" aria-live="polite">{testError ? <p className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-red-200">{testError}</p> : null}{testOutput ? <div><p className="text-sm font-semibold text-white">Model response</p><div className="mt-2 whitespace-pre-wrap break-words rounded-md border border-guard-cyan/20 bg-slate-950/50 p-4 text-sm leading-6 text-slate-200">{testOutput}</div>{testedFingerprint !== currentTestFingerprint ? <p className="mt-2 text-xs text-guard-amber">Inputs changed after this test. Run it again for the current preview.</p> : null}</div> : null}</div></Card>
         </div>
 
         {submitError ? <p aria-live="assertive" className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-red-200">{submitError}</p> : null}
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><ButtonLink variant="secondary" href={cancelHref}>Cancel</ButtonLink><SubmitButton disabled={!canSave} pendingText={mode === "create" ? "Creating Version..." : "Saving Changes..."}>{mode === "create" ? "Create Version" : "Save Changes"}</SubmitButton></div>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><ButtonLink variant="secondary" href={cancelHref}>Cancel</ButtonLink><SubmitButton disabled={!canSave} pendingText={pendingLabel}>{submitLabel}</SubmitButton></div>
       </form>
 
       {dialog ? <PromptVariableDialog variable={dialog.index !== undefined ? variables[dialog.index] : undefined} suggestedKey={dialog.suggestedKey} existingKeys={variables.map((variable) => variable.key)} onSave={saveVariable} onRemove={dialog.index !== undefined ? () => removeVariable(dialog.index!) : undefined} onClose={() => setDialog(null)} /> : null}

@@ -28,7 +28,7 @@ export default async function EditPromptVersionPage({ params }: { params: Promis
       <PageHeader eyebrow="Prompt lab" title={`Edit Version v${version.version_number}`}>
         Update this version’s structured variables, prompt, preview, and sandbox test without changing its Active or Draft status.
       </PageHeader>
-      <PromptVersionBuilder workspaceSlug={workspaceSlug} projectId={projectId} mode="edit" versionId={version.id} versionNumber={version.version_number} isActive={version.is_active} initialModel={version.model_used} initialNotes={version.notes || ""} initialSystemPrompt={version.system_prompt} initialVariableSchema={validateVariableSchema(version.variable_schema)} models={[...new Set([getProductModel(), getReasoningModel(), version.model_used])]} cancelHref={promptsPath} />
+      <PromptVersionBuilder workspaceSlug={workspaceSlug} projectId={projectId} mode="version-edit" versionId={version.id} versionNumber={version.version_number} isActive={version.is_active} initialModel={version.model_used} initialNotes={version.notes || ""} initialSystemPrompt={version.system_prompt} initialVariableSchema={validateVariableSchema(version.variable_schema)} models={[...new Set([getProductModel(), getReasoningModel(), version.model_used])]} cancelHref={promptsPath} />
     </div>
   );
 }

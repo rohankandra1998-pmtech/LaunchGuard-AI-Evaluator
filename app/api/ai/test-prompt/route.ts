@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getWorkspaceProject } from "@/lib/data";
+import { getWorkspace, getWorkspaceProject } from "@/lib/data";
 import { generateProductOutput, getProductModel, getReasoningModel } from "@/lib/openai";
 import { compilePrompt, PromptVariableError, validateVariableSchema } from "@/lib/prompt-variables";
 import { createClient } from "@/lib/supabase/server";
 
 const requestSchema = z.object({
-  workspace_slug: z.string().min(1),
-  project_id: z.string().uuid(),
+  workspace_slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Workspace slug is invalid."),
+  project_id: z.string().uuid().optional(),
   model: z.string().min(1),
   system_prompt: z.string().min(1, "System prompt is required.").max(50000),
   variable_schema: z.unknown(),
@@ -28,8 +28,13 @@ export async function POST(request: Request) {
   if (!supportedModels.includes(body.model)) return NextResponse.json({ error: "Unsupported model." }, { status: 400 });
 
   const supabase = await createClient();
-  const context = await getWorkspaceProject(supabase, body.workspace_slug, body.project_id);
-  if (!context) return NextResponse.json({ error: "Project was not found in this workspace." }, { status: 404 });
+  if (body.project_id) {
+    const context = await getWorkspaceProject(supabase, body.workspace_slug, body.project_id);
+    if (!context) return NextResponse.json({ error: "Project was not found in this workspace." }, { status: 404 });
+  } else {
+    const workspace = await getWorkspace(supabase, body.workspace_slug);
+    if (!workspace) return NextResponse.json({ error: "Workspace was not found." }, { status: 404 });
+  }
 
   let compiledPrompt: string;
   try {

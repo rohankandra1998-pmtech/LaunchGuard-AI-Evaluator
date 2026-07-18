@@ -18,7 +18,7 @@ export default async function NewPromptVersionPage({ params }: { params: Promise
       <PageHeader eyebrow="Prompt lab" title="New Prompt Version">
         Build a version-specific prompt, preview it with example values, and run an ephemeral sandbox test before saving the draft.
       </PageHeader>
-      <PromptVersionBuilder workspaceSlug={workspaceSlug} projectId={projectId} mode="create" versionNumber={nextVersionNumber} initialModel={getProductModel()} initialNotes="" initialSystemPrompt="" initialVariableSchema={[]} models={[...new Set([getProductModel(), getReasoningModel()])]} cancelHref={promptsPath} />
+      <PromptVersionBuilder workspaceSlug={workspaceSlug} projectId={projectId} mode="version-create" versionNumber={nextVersionNumber} initialModel={getProductModel()} initialNotes="" initialSystemPrompt="" initialVariableSchema={[]} models={[...new Set([getProductModel(), getReasoningModel()])]} cancelHref={promptsPath} />
     </div>
   );
 }

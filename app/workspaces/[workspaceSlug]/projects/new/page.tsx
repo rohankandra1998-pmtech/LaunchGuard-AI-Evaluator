@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
-import { createProject } from "@/app/actions";
-import { SubmitButton } from "@/components/submit-button";
-import { Card, Label, PageHeader, TextArea, TextInput } from "@/components/ui";
+import { PromptVersionBuilder } from "@/components/prompt-version-builder";
+import { Card, PageHeader, TextArea, TextInput } from "@/components/ui";
 import { getWorkspace } from "@/lib/data";
+import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function NewProjectPage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
@@ -12,28 +12,41 @@ export default async function NewProjectPage({ params }: { params: Promise<{ wor
   if (!workspace) notFound();
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-7xl">
       <PageHeader eyebrow={workspace.name} title="Create AI Project">
-        Define the product context, prompt variables, and initial system prompt. LaunchGuard creates Prompt Version 1 automatically.
+        Define the project context, then build and optionally test Prompt Version 1. The project and its active initial version are saved together.
       </PageHeader>
-      <Card>
-        <form action={createProject} className="grid gap-5">
-          <input type="hidden" name="workspace_id" value={workspace.id} />
-          <input type="hidden" name="workspace_slug" value={workspace.slug} />
-          <div className="grid gap-4 md:grid-cols-2">
-            <div><Label>Project name</Label><TextInput required name="name" placeholder="Customer Support Refund Bot" /></div>
-            <div><Label>AI product type</Label><TextInput name="product_type" placeholder="Support assistant, AI search, sales copilot" /></div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div><Label>Project goal</Label><TextInput name="goal" placeholder="Answer refund-policy questions accurately" /></div>
-            <div><Label>Target user</Label><TextInput name="target_user" placeholder="Customers asking about orders and refunds" /></div>
-          </div>
-          <div><Label>Description</Label><TextArea name="description" placeholder="Describe the product behavior, risk areas, and launch scenario." /></div>
-          <div><Label>Prompt variables</Label><TextArea name="variables" placeholder="user_question&#10;product_information&#10;policy_information&#10;retrieved_context" /></div>
-          <div><Label>Initial system prompt</Label><TextArea required name="system_prompt" className="min-h-56 font-mono" placeholder="You are a careful support assistant..." /></div>
-          <SubmitButton pendingText="Creating project...">Create AI Project</SubmitButton>
-        </form>
-      </Card>
+      <PromptVersionBuilder
+        mode="project-create"
+        workspaceSlug={workspace.slug}
+        workspaceId={workspace.id}
+        versionNumber={1}
+        initialModel={getProductModel()}
+        initialNotes=""
+        initialSystemPrompt=""
+        initialVariableSchema={[]}
+        models={[...new Set([getProductModel(), getReasoningModel()])]}
+        cancelHref={`/workspaces/${workspace.slug}`}
+        projectContext={
+          <Card>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Project Context</h2>
+              <p className="mt-1 text-sm text-slate-400">Describe the AI product and the people it should serve.</p>
+            </div>
+            <div className="mt-5 grid gap-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-medium text-slate-200">Project name<TextInput required name="name" maxLength={120} className="mt-2" placeholder="Customer Support Refund Bot" /></label>
+                <label className="text-sm font-medium text-slate-200">AI product type<TextInput name="product_type" maxLength={120} className="mt-2" placeholder="Support assistant, AI search, sales copilot" /></label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-medium text-slate-200">Project goal<TextInput name="goal" maxLength={250} className="mt-2" placeholder="Answer refund-policy questions accurately" /></label>
+                <label className="text-sm font-medium text-slate-200">Target user<TextInput name="target_user" maxLength={250} className="mt-2" placeholder="Customers asking about orders and refunds" /></label>
+              </div>
+              <label className="text-sm font-medium text-slate-200">Description<TextArea name="description" maxLength={1000} className="mt-2" placeholder="Describe the product behavior, risk areas, and launch scenario." /></label>
+            </div>
+          </Card>
+        }
+      />
     </div>
   );
 }
