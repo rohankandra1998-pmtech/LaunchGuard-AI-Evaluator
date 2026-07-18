@@ -167,7 +167,7 @@ export function PromptVariableDialog({
           close();
         }
       }}
-      className="prompt-variable-drawer fixed inset-y-0 left-auto right-0 m-0 h-[100dvh] max-h-none w-full max-w-none overflow-hidden rounded-none border-0 border-l border-guard-line bg-white p-0 text-left text-guard-text shadow-floating backdrop:bg-slate-900/25 backdrop:backdrop-blur-sm sm:w-[min(34rem,100vw)] sm:rounded-l-2xl"
+      className="prompt-variable-drawer fixed inset-y-0 left-auto right-0 m-0 h-[100dvh] max-h-none w-full max-w-none overflow-hidden rounded-none border-0 border-l border-guard-line bg-white p-0 text-left text-guard-text shadow-floating backdrop:bg-slate-900/10 sm:w-[min(34rem,100vw)] sm:rounded-l-2xl"
     >
       <div className="flex h-full min-h-0 flex-col">
         <header className="shrink-0 border-b border-guard-line bg-white px-5 py-5 sm:px-7">
@@ -265,12 +265,12 @@ export function PromptVariableDialog({
                     aria-label="Required variable value"
                     aria-describedby={requiredHelpId}
                     onClick={() => setDraft({ ...draft, required: !draft.required })}
-                    className={`focus-ring mt-2 flex min-h-10 w-full items-center gap-2 rounded-lg px-1 transition ${draft.required ? "text-guard-primary" : "text-guard-muted"}`}
+                    className={`focus-ring mt-2 inline-flex min-h-10 min-w-[5.25rem] items-center gap-2 rounded-lg px-1 transition ${draft.required ? "text-guard-primary" : "text-guard-muted"}`}
                   >
                     <span aria-hidden="true" className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${draft.required ? "bg-guard-primary" : "bg-slate-300"}`}>
-                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${draft.required ? "translate-x-5" : "translate-x-0.5"}`} />
+                      <span className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${draft.required ? "translate-x-5" : "translate-x-0.5"}`} />
                     </span>
-                    <span className="text-xs font-semibold">{draft.required ? "On" : "Off"}</span>
+                    <span className="min-w-6 whitespace-nowrap text-left text-xs font-semibold">{draft.required ? "On" : "Off"}</span>
                   </button>
                   <span id={requiredHelpId} className="sr-only">Controls whether a value must be provided at runtime.</span>
                 </div>
@@ -327,7 +327,7 @@ export function PromptVariableDialog({
               <section aria-labelledby={`${titleId}-preview`} className={`rounded-xl border p-4 ${draft.key && !keyIsValid ? "border-red-200 bg-guard-redSoft" : "border-guard-primaryLine bg-guard-surfaceMuted"}`}>
                 <h3 id={`${titleId}-preview`} className="text-sm font-semibold text-guard-ink">Live preview</h3>
                 <p className="mt-2 text-xs leading-5 text-guard-muted">This variable will appear in your prompt as:</p>
-                <code className={`mt-2 inline-flex rounded-md px-2 py-1 text-sm font-semibold ${draft.key && !keyIsValid ? "bg-white text-guard-red" : draft.key ? "bg-guard-primarySoft text-guard-primaryHover" : "bg-white text-guard-muted"}`}>{`{{${previewKey}}}`}</code>
+                <code className={`mt-2 inline-flex rounded-md px-2 py-1 text-sm font-semibold ${draft.key && !keyIsValid ? "bg-white text-guard-red" : "bg-guard-primarySoft text-guard-primaryHover"}`}>{`{{${previewKey}}}`}</code>
                 <p className={`mt-2 text-xs leading-5 ${draft.key && !keyIsValid ? "font-medium text-guard-red" : "text-guard-muted"}`}>{draft.key && !keyIsValid ? "Enter a valid, unique variable name before saving." : "At runtime, it will be replaced with the value provided."}</p>
               </section>
 
