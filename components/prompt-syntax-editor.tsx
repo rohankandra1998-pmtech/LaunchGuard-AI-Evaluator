@@ -30,7 +30,7 @@ export const PromptSyntaxEditor = forwardRef<HTMLTextAreaElement, PromptSyntaxEd
   }
 
   return (
-    <div className={cn("relative rounded-lg bg-guard-surfaceMuted", className)}>
+    <div className={cn("relative rounded-lg bg-white", className)}>
       <pre
         ref={mirrorRef}
         aria-hidden="true"
@@ -39,7 +39,7 @@ export const PromptSyntaxEditor = forwardRef<HTMLTextAreaElement, PromptSyntaxEd
         {value ? segments.map((segment, index) => {
           if (segment.kind === "text") return <span key={index} className="text-guard-ink">{segment.text}</span>;
           const tone = segment.status === "configured"
-            ? "bg-guard-primarySoft text-guard-primaryHover"
+            ? "bg-guard-primarySoft text-guard-primary"
             : segment.status === "unconfigured"
               ? "bg-guard-amberSoft text-guard-amber"
               : "bg-guard-redSoft text-guard-red";

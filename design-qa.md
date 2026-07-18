@@ -1,19 +1,20 @@
 # Design QA
 
-- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 17, 2026, 02_53_53 PM (1).png` and `(2).png`
-- Implementation evidence: `C:\Users\Rohan\.codex\visualizations\2026\07\18\019f72c1-1967-7eb2-8ce6-84cdcd7e53ca\prompt-builder-desktop.png`, `variable-dialog-desktop.png`, `golden-dataset-desktop.png`, and `prompt-builder-mobile-viewport.png`
-- Desktop viewport: 1440 × 1000
-- Mobile viewport: 390 × 844
-- State: light theme; existing seeded workspace, project, prompt version, variable dialog, and dataset
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 17, 2026, 02_53_53 PM (1).png`
+- User-reported implementation state: `C:\Users\Rohan\AppData\Local\Temp\codex-clipboard-472734d7-508e-485a-8f20-7b38fc94753a.png`
+- Revised full-view evidence: `C:\Users\Rohan\.codex\visualizations\2026\07\18\019f72c1-1967-7eb2-8ce6-84cdcd7e53ca\prompt-preview-dark-purple.png`
+- Revised focused evidence: `C:\Users\Rohan\.codex\visualizations\2026\07\18\019f72c1-1967-7eb2-8ce6-84cdcd7e53ca\prompt-preview-dark-purple-focused.png`
+- Viewport: 1440 x 1000
+- State: Prompt Version edit mode with one configured placeholder and a resolved `Nike AF1` example value.
 
 **Findings**
 
-- No actionable P0, P1, or P2 visual differences remain. The implementation preserves LaunchGuard's existing information architecture while matching the reference direction through a pale lavender canvas, white elevated cards, deep navy headings, muted slate supporting text, purple primary actions, lavender code surfaces, and semantic green/amber/red states.
-- Fonts and typography: existing product font loading is preserved. Weight, hierarchy, line height, wrapping, and compact UI labels remain readable at desktop and mobile widths.
-- Spacing and layout rhythm: cards, builder columns, navigation tabs, action groups, and form grids retain consistent spacing and restrained radii/shadows. The builder stacks correctly at 390px with no page-level horizontal overflow.
-- Colors and visual tokens: shared semantic Tailwind tokens consistently map page, surface, text, border, primary, focus, success, warning, and danger roles. Browser-computed body colors are `rgb(247, 247, 252)` and `rgb(57, 53, 77)`.
-- Image quality and asset fidelity: the target and implementation are UI-only and use the existing Lucide icon system; no source imagery, logo art, illustrations, or raster assets required replacement.
-- Copy and content: existing LaunchGuard product copy and route-specific information are preserved.
+- No actionable P0, P1, or P2 visual differences remain for the requested editor and Final Prompt Preview treatment.
+- Fonts and typography: resolved variable values retain the preview's monospace size, weight, line height, and wrapping while using the darker design-system purple (`rgb(89, 43, 212)`).
+- Spacing and layout rhythm: removing the marker fill does not alter inline spacing, line breaks, card padding, or preview dimensions.
+- Colors and visual tokens: the System Prompt editor canvas is white; configured source placeholders retain a subtle lavender chip; resolved preview values now use dark-purple text on a fully transparent background (`rgba(0, 0, 0, 0)`).
+- Image quality and asset fidelity: this focused change contains no imagery or generated assets. Existing Lucide UI icons are unchanged.
+- Copy and content: prompt text and variable values are unchanged. Only visual presentation changed.
 
 **Open Questions**
 
@@ -21,19 +22,20 @@
 
 **Implementation Checklist**
 
-- [x] Compared the full prompt-builder view against the supplied builder reference.
-- [x] Compared the focused variable-dialog state against the supplied dialog reference.
-- [x] Inspected workspace directory, workspace detail, project overview, prompt versions, prompt builder, variable dialog, and Golden Dataset table.
-- [x] Tested dialog opening and cancel behavior.
-- [x] Checked the 390 × 844 mobile builder viewport and horizontal overflow.
-- [x] Checked browser console warnings and errors; none were reported.
+- [x] Remove the lavender background from resolved values in Final Prompt Preview.
+- [x] Apply the darker purple foreground token to resolved values.
+- [x] Preserve the white System Prompt editor canvas and lavender source-placeholder chips.
+- [x] Confirm rendered computed styles and browser console output.
+- [x] Compare the supplied reference and revised browser capture at the desktop viewport.
 
 **Comparison History**
 
-- Initial full-view and focused comparisons found no actionable P0/P1/P2 issues. No visual-fix iteration was required after the comparison.
+- Initial user evidence showed resolved preview values with a lavender marker background, which differed from the reference's darker purple text-only treatment (P2).
+- Replaced the preview `<mark>` with a non-interactive `<span>`, removed the background fill, and applied `text-guard-primaryHover`.
+- Post-fix browser evidence shows dark-purple variable text with a transparent background. No console warnings or errors were reported.
 
 **Follow-up Polish**
 
-- None required for this migration.
+- None required for this focused correction.
 
 final result: passed
