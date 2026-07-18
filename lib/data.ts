@@ -33,6 +33,7 @@ export async function getWorkspaceProject(supabase: SupabaseClient, workspaceSlu
     .select("*")
     .eq("id", id)
     .eq("workspace_id", workspace.id)
+    .is("trashed_at", null)
     .maybeSingle();
   if (error) throw error;
   if (!project) return null;
@@ -44,6 +45,19 @@ export async function requireWorkspaceProject(supabase: SupabaseClient, workspac
   const context = await getWorkspaceProject(supabase, workspaceSlug, projectId);
   if (!context) throw new Error("Project was not found in this workspace.");
   return context;
+}
+
+export async function getNextPromptVersionNumber(supabase: SupabaseClient, projectId: string) {
+  const id = assertUuid(projectId, "Project ID");
+  const { data: latest, error } = await supabase
+    .from("prompt_versions")
+    .select("version_number")
+    .eq("project_id", id)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (latest?.version_number ?? 0) + 1;
 }
 
 export function projectPath(workspaceSlug: string, projectId: string, suffix = "") {

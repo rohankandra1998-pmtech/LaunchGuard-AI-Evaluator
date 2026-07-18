@@ -3,6 +3,7 @@ import { errorAnalysisSchema } from "@/lib/ai/schemas";
 import { getWorkspaceProject } from "@/lib/data";
 import { runStructuredOutput } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
+import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 
 export async function POST(request: Request) {
   try {
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
       .single();
     if (error) throw error;
 
+    revalidateProjectActivityPaths(workspace_slug, project_id, "/reports");
     return NextResponse.json(report);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });

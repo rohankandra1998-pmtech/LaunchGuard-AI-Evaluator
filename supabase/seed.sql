@@ -32,7 +32,7 @@ on conflict (id) do update set
   description = excluded.description,
   variables = excluded.variables;
 
-insert into public.prompt_versions (id, project_id, version_number, system_prompt, model_used, notes, is_active)
+insert into public.prompt_versions (id, project_id, version_number, system_prompt, model_used, notes, is_active, variable_schema)
 values (
   '30000000-0000-0000-0000-000000000001',
   '20000000-0000-0000-0000-000000000001',
@@ -40,13 +40,15 @@ values (
   'You are a careful customer support assistant. Answer using the refund policy and retrieved context. If context is missing, ask a clarifying question. Do not invent order details.',
   'gpt-4.1',
   'Initial demo prompt',
-  true
+  true,
+  '[{"key":"user_question","label":"User Question","type":"text","required":false,"default_value":null,"description":null,"options":[]},{"key":"policy_information","label":"Policy Information","type":"text","required":false,"default_value":null,"description":null,"options":[]},{"key":"retrieved_context","label":"Retrieved Context","type":"text","required":false,"default_value":null,"description":null,"options":[]}]'::jsonb
 )
 on conflict (project_id, version_number) do update set
   system_prompt = excluded.system_prompt,
   model_used = excluded.model_used,
   notes = excluded.notes,
-  is_active = excluded.is_active;
+  is_active = excluded.is_active,
+  variable_schema = excluded.variable_schema;
 
 insert into public.evaluation_criteria (id, project_id, name, description, good_definition, average_definition, bad_definition, category)
 values

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ButtonLink, Card, PageHeader, StatCard } from "@/components/ui";
+import { ProjectActionsMenu } from "@/components/project-actions-menu";
 import { getWorkspaceProject, projectPath } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 
@@ -22,7 +23,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ worksp
       <PageHeader
         eyebrow={project.product_type || "AI project"}
         title={project.name}
-        actions={<ButtonLink href={projectPath(workspaceSlug, projectId, "/dataset")}>Run AI Outputs</ButtonLink>}
+        actions={
+          <>
+            <ProjectActionsMenu workspaceSlug={workspaceSlug} projectId={projectId} projectName={project.name} />
+            <ButtonLink href={projectPath(workspaceSlug, projectId, "/dataset")}>Run AI Outputs</ButtonLink>
+          </>
+        }
       >
         {project.goal || "Build a structured human evaluation loop before launch."}
       </PageHeader>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -54,9 +55,9 @@ export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn("focus-ring w-full rounded-md border border-white/10 bg-slate-950/40 px-3 py-2 text-sm text-white placeholder:text-slate-500", props.className)} />;
 }
 
-export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn("focus-ring min-h-28 w-full rounded-md border border-white/10 bg-slate-950/40 px-3 py-2 text-sm text-white placeholder:text-slate-500", props.className)} />;
-}
+export const TextArea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea(props, ref) {
+  return <textarea ref={ref} {...props} className={cn("focus-ring min-h-28 w-full rounded-md border border-white/10 bg-slate-950/40 px-3 py-2 text-sm text-white placeholder:text-slate-500", props.className)} />;
+});
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={cn("focus-ring w-full rounded-md border border-white/10 bg-slate-950/40 px-3 py-2 text-sm text-white", props.className)} />;

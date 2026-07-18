@@ -3,14 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { assertUuid, assertWorkspaceSlug, getWorkspace, projectPath, requireWorkspaceProject } from "@/lib/data";
-import { parseJsonObject, parseVariables, ratingLabelToScore } from "@/lib/utils";
+import { assertUuid, assertWorkspaceSlug, getNextPromptVersionNumber, getWorkspace, projectPath, requireWorkspaceProject } from "@/lib/data";
+import { parseJsonObject, ratingLabelToScore } from "@/lib/utils";
 import { getProductModel, getReasoningModel } from "@/lib/openai";
+import { revalidateProjectActivityPaths } from "@/lib/revalidation";
+import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
 function formString(formData: FormData, key: string) {
   return String(formData.get(key) || "").trim();
+}
+
+function formValue(formData: FormData, key: string) {
+  return String(formData.get(key) || "");
 }
 
 function workspaceProjectFields(formData: FormData) {
@@ -49,6 +55,7 @@ export async function createWorkspace(formData: FormData) {
     .single();
   if (error) throw error;
 
+  revalidatePath("/workspaces");
   redirect(`/workspaces/${workspace.slug}`);
 }
 
@@ -59,10 +66,14 @@ export async function createProject(formData: FormData) {
   const workspace = await getWorkspace(supabase, workspaceSlug);
   if (!workspace || workspace.id !== workspaceId) throw new Error("Workspace could not be validated.");
 
-  const variables = parseVariables(formString(formData, "variables"));
   const name = formString(formData, "name");
-  const systemPrompt = formString(formData, "system_prompt");
-  if (!name || !systemPrompt) throw new Error("Project name and initial system prompt are required.");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!name) throw new Error("Project name is required.");
+  if (!systemPrompt.trim()) throw new Error("Initial system prompt is required.");
+  const model = validateModel(formString(formData, "model_used"));
+  const variableSchema = parseSerializedVariableSchema(formString(formData, "variable_schema"));
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
+  const variableKeys = variableSchema.map((variable) => variable.key);
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -73,7 +84,7 @@ export async function createProject(formData: FormData) {
       goal: formString(formData, "goal"),
       target_user: formString(formData, "target_user"),
       description: formString(formData, "description") || null,
-      variables
+      variables: variableKeys
     })
     .select("id")
     .single();
@@ -83,8 +94,9 @@ export async function createProject(formData: FormData) {
     project_id: project.id,
     version_number: 1,
     system_prompt: systemPrompt,
-    model_used: getProductModel(),
-    notes: "Initial prompt version",
+    variable_schema: variableSchema,
+    model_used: model,
+    notes: formString(formData, "notes") || "Initial prompt version",
     is_active: true
   });
   if (promptError) {
@@ -92,21 +104,97 @@ export async function createProject(formData: FormData) {
     throw promptError;
   }
 
+  revalidateProjectActivityPaths(workspace.slug, project.id, "/prompts");
   redirect(projectPath(workspace.slug, project.id));
+}
+
+export async function moveProjectToTrash(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  const workspace = await getWorkspace(supabase, workspaceSlug);
+  if (!workspace) throw new Error("Workspace could not be validated.");
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .is("trashed_at", null)
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("Project is unavailable or already in Trash.");
+
+  const { data: movedProject, error } = await supabase
+    .from("projects")
+    .update({ trashed_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .is("trashed_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!movedProject) throw new Error("Project could not be moved to Trash.");
+
+  revalidateProjectActivityPaths(workspaceSlug, projectId);
+  redirect(`/workspaces/${workspaceSlug}`);
+}
+
+export async function restoreProject(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  const workspace = await getWorkspace(supabase, workspaceSlug);
+  if (!workspace) throw new Error("Workspace could not be validated.");
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .not("trashed_at", "is", null)
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("Project is unavailable or already restored.");
+
+  const { data: restoredProject, error } = await supabase
+    .from("projects")
+    .update({ trashed_at: null })
+    .eq("id", projectId)
+    .eq("workspace_id", workspace.id)
+    .not("trashed_at", "is", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!restoredProject) throw new Error("Project could not be restored.");
+
+  revalidateProjectActivityPaths(workspaceSlug, projectId);
 }
 
 export async function updatePromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
-  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const context = await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const id = assertUuid(formString(formData, "id"), "Prompt version ID");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!systemPrompt.trim()) throw new Error("System prompt is required.");
+  const variableSchema = parseSerializedVariableSchema(formString(formData, "variable_schema"));
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
+
+  const { data: version, error: versionError } = await supabase
+    .from("prompt_versions")
+    .select("id, is_active")
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (versionError) throw versionError;
+  if (!version) throw new Error("Prompt version does not belong to this project.");
 
   const { data, error } = await supabase
     .from("prompt_versions")
     .update({
-      system_prompt: formString(formData, "system_prompt"),
+      system_prompt: systemPrompt,
       notes: formString(formData, "notes") || null,
-      model_used: validateModel(formString(formData, "model_used") || getProductModel())
+      model_used: validateModel(formString(formData, "model_used") || getProductModel()),
+      variable_schema: variableSchema
     })
     .eq("id", id)
     .eq("project_id", projectId)
@@ -114,7 +202,48 @@ export async function updatePromptVersion(formData: FormData) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Prompt version does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  if (version.is_active) {
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .update({ variables: variableSchema.map((variable) => variable.key) })
+      .eq("id", projectId)
+      .eq("workspace_id", context.workspace.id)
+      .is("trashed_at", null)
+      .select("id")
+      .maybeSingle();
+    if (projectError) throw projectError;
+    if (!project) throw new Error("Active project variables could not be synchronized.");
+  }
+  const promptsPath = projectPath(workspaceSlug, projectId, "/prompts");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
+  redirect(promptsPath);
+}
+
+export async function createPromptVersion(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!systemPrompt.trim()) throw new Error("System prompt is required.");
+  const variableSchema = parseSerializedVariableSchema(formString(formData, "variable_schema"));
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
+
+  const nextVersionNumber = await getNextPromptVersionNumber(supabase, projectId);
+
+  const { error } = await supabase.from("prompt_versions").insert({
+    project_id: projectId,
+    version_number: nextVersionNumber,
+    system_prompt: systemPrompt,
+    variable_schema: variableSchema,
+    model_used: validateModel(formString(formData, "model_used")),
+    notes: formString(formData, "notes") || null,
+    is_active: false
+  });
+  if (error) throw error;
+
+  const promptsPath = projectPath(workspaceSlug, projectId, "/prompts");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
+  redirect(promptsPath);
 }
 
 export async function duplicatePromptVersion(formData: FormData) {
@@ -127,39 +256,101 @@ export async function duplicatePromptVersion(formData: FormData) {
   if (sourceError) throw sourceError;
   if (!source) throw new Error("Prompt version does not belong to this project.");
 
-  const { data: latest, error: latestError } = await supabase
-    .from("prompt_versions")
-    .select("version_number")
-    .eq("project_id", projectId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .single();
-  if (latestError) throw latestError;
+  const nextVersionNumber = await getNextPromptVersionNumber(supabase, projectId);
 
   const { error } = await supabase.from("prompt_versions").insert({
     project_id: projectId,
-    version_number: latest.version_number + 1,
+    version_number: nextVersionNumber,
     system_prompt: source.system_prompt,
+    variable_schema: validateVariableSchema(source.variable_schema),
     model_used: source.model_used,
     notes: `Duplicated from v${source.version_number}`,
     is_active: false
   });
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
+}
+
+export async function deletePromptVersion(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const id = assertUuid(formString(formData, "id"), "Prompt version ID");
+
+  const { data: version, error: versionError } = await supabase
+    .from("prompt_versions")
+    .select("id, version_number, is_active")
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (versionError) throw versionError;
+  if (!version) throw new Error("Prompt version does not belong to this project.");
+  if (version.is_active) throw new Error(`Activate another prompt version before deleting v${version.version_number}.`);
+
+  const { count: versionCount, error: countError } = await supabase
+    .from("prompt_versions")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId);
+  if (countError) throw countError;
+  if (versionCount === null) throw new Error("Could not count prompt versions.");
+  if (versionCount <= 1) throw new Error("A project must keep at least one prompt version.");
+
+  const referenceResults = await Promise.all([
+    supabase.from("test_cases").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id),
+    supabase.from("eval_runs").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id),
+    supabase.from("generated_outputs").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id),
+    supabase.from("error_analysis_reports").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("prompt_version_id", id)
+  ]);
+  for (const result of referenceResults) {
+    if (result.error) throw result.error;
+    if (result.count === null) throw new Error("Could not check prompt version evaluation history.");
+  }
+  if (referenceResults.some((result) => result.count! > 0)) {
+    throw new Error(`v${version.version_number} has evaluation history and cannot be deleted.`);
+  }
+
+  const { data: deleted, error } = await supabase
+    .from("prompt_versions")
+    .delete()
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!deleted) throw new Error("Prompt version could not be deleted.");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
 export async function activatePromptVersion(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
-  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const context = await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const id = assertUuid(formString(formData, "id"), "Prompt version ID");
-  await assertRelatedRecord("prompt_versions", id, projectId, "Prompt version");
+  const { data: version, error: versionError } = await supabase
+    .from("prompt_versions")
+    .select("id, variable_schema")
+    .eq("id", id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (versionError) throw versionError;
+  if (!version) throw new Error("Prompt version does not belong to this project.");
+  const variableSchema = validateVariableSchema(version.variable_schema);
 
   const { error: deactivateError } = await supabase.from("prompt_versions").update({ is_active: false }).eq("project_id", projectId);
   if (deactivateError) throw deactivateError;
   const { error } = await supabase.from("prompt_versions").update({ is_active: true }).eq("id", id).eq("project_id", projectId);
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .update({ variables: variableSchema.map((variable) => variable.key) })
+    .eq("id", projectId)
+    .eq("workspace_id", context.workspace.id)
+    .is("trashed_at", null)
+    .select("id")
+    .maybeSingle();
+  if (projectError) throw projectError;
+  if (!project) throw new Error("Active project variables could not be synchronized.");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts");
 }
 
 export async function saveCriterion(formData: FormData) {
@@ -185,7 +376,7 @@ export async function saveCriterion(formData: FormData) {
     : await supabase.from("evaluation_criteria").insert(payload).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Criterion does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/criteria"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria");
 }
 
 export async function deleteCriterion(formData: FormData) {
@@ -196,7 +387,7 @@ export async function deleteCriterion(formData: FormData) {
   const { data, error } = await supabase.from("evaluation_criteria").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Criterion does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/criteria"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria");
 }
 
 export async function saveTestCase(formData: FormData) {
@@ -221,7 +412,7 @@ export async function saveTestCase(formData: FormData) {
     : await supabase.from("test_cases").insert(payload).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Test case does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/dataset"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, cases: Array<Record<string, unknown>>) {
@@ -243,7 +434,7 @@ export async function saveGeneratedTestCases(workspaceSlug: string, projectId: s
   if (rows.some((row) => !row.user_input)) throw new Error("Generated test cases must include user input.");
   const { error } = await supabase.from("test_cases").insert(rows);
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/dataset"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function deleteTestCase(formData: FormData) {
@@ -254,7 +445,7 @@ export async function deleteTestCase(formData: FormData) {
   const { data, error } = await supabase.from("test_cases").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Test case does not belong to this project.");
-  revalidatePath(projectPath(workspaceSlug, projectId, "/dataset"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function saveHumanReview(formData: FormData) {
@@ -308,35 +499,35 @@ export async function saveHumanReview(formData: FormData) {
 
   const { error: testCaseError } = await supabase.from("test_cases").update({ status: "reviewed" }).eq("id", testCaseId).eq("project_id", projectId);
   if (testCaseError) throw testCaseError;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/review"));
-  revalidatePath(projectPath(workspaceSlug, projectId, "/results"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/review", "/results");
 }
 
 export async function savePromptDraft(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
-  const systemPrompt = formString(formData, "system_prompt");
-  if (!systemPrompt) throw new Error("Improved system prompt is required.");
+  const systemPrompt = formValue(formData, "system_prompt");
+  if (!systemPrompt.trim()) throw new Error("Improved system prompt is required.");
 
-  const { data: latest, error: latestError } = await supabase
-    .from("prompt_versions")
-    .select("version_number")
-    .eq("project_id", projectId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .single();
+  const [{ data: latest, error: latestError }, { data: active, error: activeError }] = await Promise.all([
+    supabase.from("prompt_versions").select("version_number").eq("project_id", projectId).order("version_number", { ascending: false }).limit(1).single(),
+    supabase.from("prompt_versions").select("variable_schema").eq("project_id", projectId).eq("is_active", true).maybeSingle()
+  ]);
   if (latestError) throw latestError;
+  if (activeError) throw activeError;
+  if (!active) throw new Error("Active prompt version not found.");
+  const variableSchema = validateVariableSchema(active.variable_schema);
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
 
   const { error } = await supabase.from("prompt_versions").insert({
     project_id: projectId,
     version_number: latest.version_number + 1,
     system_prompt: systemPrompt,
+    variable_schema: variableSchema,
     model_used: getProductModel(),
     notes: formString(formData, "change_summary") || "Draft created from error analysis",
     is_active: false
   });
   if (error) throw error;
-  revalidatePath(projectPath(workspaceSlug, projectId, "/prompts"));
-  revalidatePath(projectPath(workspaceSlug, projectId, "/reports"));
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts", "/reports");
 }
