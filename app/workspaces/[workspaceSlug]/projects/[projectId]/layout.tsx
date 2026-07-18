@@ -19,9 +19,9 @@ export default async function ProjectLayout({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-        <Link href="/workspaces" className="hover:text-white">Workspaces</Link><span>/</span>
-        <Link href={`/workspaces/${workspaceSlug}`} className="hover:text-white">{context.workspace.name}</Link><span>/</span>
-        <span className="text-slate-200">{context.project.name}</span>
+        <Link href="/workspaces" className="hover:text-guard-primary">Workspaces</Link><span>/</span>
+        <Link href={`/workspaces/${workspaceSlug}`} className="hover:text-guard-primary">{context.workspace.name}</Link><span>/</span>
+        <span className="text-guard-text">{context.project.name}</span>
       </div>
       <ProjectNav workspaceSlug={workspaceSlug} projectId={projectId} />
       {children}

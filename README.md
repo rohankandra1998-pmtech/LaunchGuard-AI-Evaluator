@@ -119,6 +119,10 @@ Run Test sends the compiled system prompt and a sample user message to the selec
 
 `projects.variables` remains as a legacy list of active variable keys. New projects derive it from Prompt Version 1’s structured variable keys; the migration backfills existing versions from legacy project values. Activating or editing the active version synchronizes the legacy list, while creating or editing an inactive draft does not change it.
 
+## Design System
+
+LaunchGuard uses one default light lavender-and-purple visual system. Purple is the primary brand and action color, while white and lavender surfaces establish hierarchy across pages, cards, forms, tables, and prompt workspaces. Green, amber, and red retain their semantic meanings for success, warning, and danger states. Dark mode is not implemented.
+
 ## Local Development
 
 ```bash

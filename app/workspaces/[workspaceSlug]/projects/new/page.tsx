@@ -30,19 +30,19 @@ export default async function NewProjectPage({ params }: { params: Promise<{ wor
         projectContext={
           <Card>
             <div>
-              <h2 className="text-lg font-semibold text-white">Project Context</h2>
+              <h2 className="text-lg font-semibold text-guard-ink">Project Context</h2>
               <p className="mt-1 text-sm text-slate-400">Describe the AI product and the people it should serve.</p>
             </div>
             <div className="mt-5 grid gap-5">
               <div className="grid gap-4 md:grid-cols-2">
-                <label className="text-sm font-medium text-slate-200">Project name<TextInput required name="name" maxLength={120} className="mt-2" placeholder="Customer Support Refund Bot" /></label>
-                <label className="text-sm font-medium text-slate-200">AI product type<TextInput name="product_type" maxLength={120} className="mt-2" placeholder="Support assistant, AI search, sales copilot" /></label>
+                <label className="text-sm font-medium text-guard-text">Project name<TextInput required name="name" maxLength={120} className="mt-2" placeholder="Customer Support Refund Bot" /></label>
+                <label className="text-sm font-medium text-guard-text">AI product type<TextInput name="product_type" maxLength={120} className="mt-2" placeholder="Support assistant, AI search, sales copilot" /></label>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <label className="text-sm font-medium text-slate-200">Project goal<TextInput name="goal" maxLength={250} className="mt-2" placeholder="Answer refund-policy questions accurately" /></label>
-                <label className="text-sm font-medium text-slate-200">Target user<TextInput name="target_user" maxLength={250} className="mt-2" placeholder="Customers asking about orders and refunds" /></label>
+                <label className="text-sm font-medium text-guard-text">Project goal<TextInput name="goal" maxLength={250} className="mt-2" placeholder="Answer refund-policy questions accurately" /></label>
+                <label className="text-sm font-medium text-guard-text">Target user<TextInput name="target_user" maxLength={250} className="mt-2" placeholder="Customers asking about orders and refunds" /></label>
               </div>
-              <label className="text-sm font-medium text-slate-200">Description<TextArea name="description" maxLength={1000} className="mt-2" placeholder="Describe the product behavior, risk areas, and launch scenario." /></label>
+              <label className="text-sm font-medium text-guard-text">Description<TextArea name="description" maxLength={1000} className="mt-2" placeholder="Describe the product behavior, risk areas, and launch scenario." /></label>
             </div>
           </Card>
         }

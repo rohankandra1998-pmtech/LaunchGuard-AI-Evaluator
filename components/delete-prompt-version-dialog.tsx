@@ -40,14 +40,14 @@ export function DeletePromptVersionDialog({
             dialogRef.current?.close();
           }
         }}
-        className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-white/10 bg-guard-panel p-0 text-left text-white shadow-2xl backdrop:bg-slate-950/80 backdrop:backdrop-blur-sm"
+        className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-guard-line bg-white p-0 text-left text-guard-text shadow-floating backdrop:bg-slate-900/35 backdrop:backdrop-blur-sm"
       >
         <div className="p-5 sm:p-6">
           <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-guard-red/15 text-guard-red">
             <Trash2 className="h-5 w-5" aria-hidden="true" />
           </div>
-          <h2 id={titleId} className="text-xl font-semibold text-white">Delete prompt version?</h2>
-          <p id={descriptionId} className="mt-2 text-sm leading-6 text-slate-300">
+          <h2 id={titleId} className="text-xl font-semibold text-guard-ink">Delete prompt version?</h2>
+          <p id={descriptionId} className="mt-2 text-sm leading-6 text-guard-muted">
             Delete v{versionNumber}? This permanently removes this unused draft and cannot be undone.
           </p>
           <form action={deletePromptVersion} className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -58,7 +58,7 @@ export function DeletePromptVersionDialog({
               type="button"
               autoFocus
               onClick={() => dialogRef.current?.close()}
-              className="focus-ring inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+              className="focus-ring inline-flex items-center justify-center rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text transition hover:bg-guard-surfaceMuted"
             >
               Cancel
             </button>

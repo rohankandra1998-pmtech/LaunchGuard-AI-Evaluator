@@ -40,15 +40,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ worksp
       </div>
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <Card>
-          <h2 className="text-lg font-semibold text-white">Project context</h2>
+          <h2 className="text-lg font-semibold text-guard-ink">Project context</h2>
           <dl className="mt-4 space-y-3 text-sm">
-            <div><dt className="text-slate-400">Target user</dt><dd className="text-white">{project.target_user || "Not defined"}</dd></div>
-            <div><dt className="text-slate-400">Description</dt><dd className="text-white">{project.description || "No description yet."}</dd></div>
-            <div><dt className="text-slate-400">Variables</dt><dd className="text-white">{project.variables?.join(", ") || "No variables"}</dd></div>
+            <div><dt className="text-guard-muted">Target user</dt><dd className="text-guard-ink">{project.target_user || "Not defined"}</dd></div>
+            <div><dt className="text-guard-muted">Description</dt><dd className="text-guard-ink">{project.description || "No description yet."}</dd></div>
+            <div><dt className="text-guard-muted">Variables</dt><dd className="text-guard-ink">{project.variables?.join(", ") || "No variables"}</dd></div>
           </dl>
         </Card>
         <Card>
-          <h2 className="text-lg font-semibold text-white">Next best actions</h2>
+          <h2 className="text-lg font-semibold text-guard-ink">Next best actions</h2>
           <div className="mt-4 grid gap-3">
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/criteria")}>Suggest Criteria</ButtonLink>
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/dataset")}>Generate Starter Test Set</ButtonLink>

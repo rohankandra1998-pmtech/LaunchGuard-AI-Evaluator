@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { Badge, Card, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
 import type { EvaluationCriterion, Project, PromptVersion, TestCase } from "@/lib/types";
 
-const statusTone = { draft: "neutral", generated: "cyan", reviewed: "good" } as const;
+const statusTone = { draft: "neutral", generated: "primary", reviewed: "good" } as const;
 
 export function DatasetWorkspace({
   workspaceSlug,
@@ -81,7 +81,7 @@ export function DatasetWorkspace({
           <form action={saveTestCase} className="grid gap-4">
             <input type="hidden" name="project_id" value={project.id} />
             <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-            <h2 className="text-lg font-semibold text-white">Add test case</h2>
+            <h2 className="text-lg font-semibold text-guard-ink">Add test case</h2>
             <div><Label>User input / question</Label><TextArea required name="user_input" /></div>
             <div className="grid gap-4 md:grid-cols-2">
               <div><Label>Case type</Label><Select name="case_type"><option value="normal">normal</option><option value="edge">edge</option><option value="ambiguous">ambiguous</option><option value="missing_context">missing_context</option><option value="adversarial">adversarial</option><option value="tone_sensitive">tone_sensitive</option></Select></div>
@@ -91,21 +91,21 @@ export function DatasetWorkspace({
             <SubmitButton>Add test case</SubmitButton>
           </form>
           <div>
-            <h2 className="text-lg font-semibold text-white">Generate Starter Test Set</h2>
-            <p className="mt-2 text-sm text-slate-300">GPT-5 creates normal, edge, ambiguous, missing-context, adversarial, and tone-sensitive cases.</p>
-            <button onClick={generateStarterSet} disabled={pending || !criteria.length} className="focus-ring mt-4 rounded-md bg-guard-cyan px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-60">
+            <h2 className="text-lg font-semibold text-guard-ink">Generate Starter Test Set</h2>
+            <p className="mt-2 text-sm text-guard-muted">GPT-5 creates normal, edge, ambiguous, missing-context, adversarial, and tone-sensitive cases.</p>
+            <button onClick={generateStarterSet} disabled={pending || !criteria.length} className="focus-ring mt-4 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
               {pending ? "Generating..." : "Generate Starter Test Set"}
             </button>
             {error ? <p className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{error}</p> : null}
             {generated.length ? (
               <div className="mt-4 space-y-3">
                 {generated.map((item, index) => (
-                  <div key={index} className="rounded-md border border-white/10 bg-slate-950/35 p-3 text-sm text-slate-200">
+                  <div key={index} className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-3 text-sm text-guard-text">
                     <Badge>{String(item.case_type)}</Badge>
                     <p className="mt-2">{String(item.user_input)}</p>
                   </div>
                 ))}
-                <button onClick={saveSuggestions} className="rounded-md bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15">Save generated cases</button>
+                <button onClick={saveSuggestions} className="focus-ring rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Save generated cases</button>
               </div>
             ) : null}
           </div>
@@ -115,7 +115,7 @@ export function DatasetWorkspace({
       <Card>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">Golden Dataset</h2>
+            <h2 className="text-lg font-semibold text-guard-ink">Golden Dataset</h2>
             <p className="mt-1 text-sm text-slate-400">Select cases, choose a prompt version, and run GPT outputs.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
@@ -128,7 +128,7 @@ export function DatasetWorkspace({
             <Select value={model} onChange={(event) => setModel(event.target.value)}>
               <option value="gpt-4.1">gpt-4.1</option><option value="gpt-5">gpt-5</option>
             </Select>
-            <button onClick={runOutputs} disabled={pending || !visibleCases.length || !promptVersion} className="focus-ring rounded-md bg-guard-cyan px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-60">
+            <button onClick={runOutputs} disabled={pending || !visibleCases.length || !promptVersion} className="focus-ring rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
               {pending ? "Running..." : "Run AI Outputs"}
             </button>
           </div>
@@ -139,17 +139,17 @@ export function DatasetWorkspace({
               <thead className="text-xs uppercase text-slate-400"><tr><th className="p-3">Select</th><th className="p-3">Input</th><th className="p-3">Status</th><th className="p-3">Case</th><th className="p-3">Output</th><th className="p-3">Actions</th></tr></thead>
               <tbody>
                 {visibleCases.map((testCase) => (
-                  <tr key={testCase.id} className="border-t border-white/10">
+                  <tr key={testCase.id} className="border-t border-guard-line transition hover:bg-guard-surfaceMuted">
                     <td className="p-3"><input type="checkbox" checked={selected.includes(testCase.id)} onChange={(event) => setSelected((cur) => event.target.checked ? [...cur, testCase.id] : cur.filter((id) => id !== testCase.id))} /></td>
-                    <td className="max-w-md p-3 text-slate-200">{testCase.user_input}</td>
+                    <td className="max-w-md p-3 text-guard-text">{testCase.user_input}</td>
                     <td className="p-3"><Badge tone={statusTone[testCase.status]}>{testCase.status}</Badge></td>
-                    <td className="p-3 text-slate-300">{testCase.case_type}</td>
+                    <td className="p-3 text-guard-muted">{testCase.case_type}</td>
                     <td className="max-w-sm truncate p-3 text-slate-400">{testCase.generated_ai_output || "Not generated"}</td>
                     <td className="p-3">
                       <div className="flex items-start gap-2">
                         <details>
-                          <summary className="cursor-pointer rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Edit</summary>
-                          <form action={saveTestCase} className="mt-3 grid w-80 gap-3 rounded-md border border-white/10 bg-guard-panel p-4 shadow-glow">
+                          <summary className="cursor-pointer rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Edit</summary>
+                          <form action={saveTestCase} className="mt-3 grid w-80 gap-3 rounded-xl border border-guard-line bg-white p-4 shadow-floating">
                             <input type="hidden" name="id" value={testCase.id} />
                             <input type="hidden" name="project_id" value={project.id} />
                             <input type="hidden" name="workspace_slug" value={workspaceSlug} />
