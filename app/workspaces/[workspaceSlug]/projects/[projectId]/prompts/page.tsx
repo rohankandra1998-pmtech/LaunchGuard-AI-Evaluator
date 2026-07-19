@@ -27,14 +27,14 @@ export default async function PromptsPage({ params }: { params: Promise<{ worksp
             <Card key={version.id}>
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-semibold text-white">Prompt Version v{version.version_number}</h2>{version.is_active ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}<Badge tone="cyan">{version.model_used}</Badge></div>
-                  <p className="mt-3 text-sm text-slate-300">{version.notes || "No change summary provided."}</p>
-                  <p className="mt-3 text-xs text-slate-500">{variableCount} variable{variableCount === 1 ? "" : "s"}</p>
-                  <pre className="mt-4 max-h-24 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-white/10 bg-slate-950/35 p-4 text-xs leading-5 text-slate-300">{version.system_prompt}</pre>
+                  <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-semibold text-guard-ink">Prompt Version v{version.version_number}</h2>{version.is_active ? <Badge tone="good">Active</Badge> : <Badge>Draft</Badge>}<Badge tone="primary">{version.model_used}</Badge></div>
+                  <p className="mt-3 text-sm text-guard-text">{version.notes || "No change summary provided."}</p>
+                  <p className="mt-3 text-xs text-guard-muted">{variableCount} variable{variableCount === 1 ? "" : "s"}</p>
+                  <pre className="mt-4 max-h-24 overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-guard-line bg-guard-surfaceMuted p-4 text-xs leading-5 text-guard-text">{version.system_prompt}</pre>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, `/prompts/${version.id}/edit`)}>Edit Version</ButtonLink>
-                  <form action={duplicatePromptVersion}><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="id" value={version.id} /><SubmitButton className="bg-white/10 text-white hover:bg-white/15" pendingText="Duplicating...">Duplicate</SubmitButton></form>
+                  <form action={duplicatePromptVersion}><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="id" value={version.id} /><SubmitButton className="!border !border-guard-lineStrong !bg-white !text-guard-primaryHover hover:!bg-guard-primarySoft" pendingText="Duplicating...">Duplicate</SubmitButton></form>
                   {!version.is_active ? <DeletePromptVersionDialog workspaceSlug={workspaceSlug} projectId={projectId} versionId={version.id} versionNumber={version.version_number} /> : null}
                   {!version.is_active ? <form action={activatePromptVersion}><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="id" value={version.id} /><SubmitButton pendingText="Activating...">Mark Active</SubmitButton></form> : null}
                 </div>

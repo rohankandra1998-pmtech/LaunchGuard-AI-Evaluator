@@ -55,17 +55,17 @@ export default async function WorkspacePage({ params }: { params: Promise<{ work
             const testCases = project.test_cases || [];
             const reviewed = testCases.filter((testCase: { status: string }) => testCase.status === "reviewed").length;
             return (
-              <Card key={project.id} className="group relative h-full transition hover:border-guard-cyan/40 hover:bg-white/[0.065]">
+              <Card key={project.id} className="group relative h-full transition hover:-translate-y-0.5 hover:border-guard-primaryLine hover:shadow-floating">
                 <div className="absolute right-4 top-4">
                   <ProjectActionsMenu workspaceSlug={workspace.slug} projectId={project.id} projectName={project.name} />
                 </div>
                 <Link href={`/workspaces/${workspace.slug}/projects/${project.id}`} className="focus-ring block rounded-md pr-12">
                   <div className="flex items-start justify-between gap-4">
-                    <div><Badge tone="cyan">{project.product_type || "AI product"}</Badge><h2 className="mt-3 text-lg font-semibold text-white">{project.name}</h2></div>
-                    <ArrowRight className="h-4 w-4 text-slate-500 transition group-hover:translate-x-1 group-hover:text-guard-cyan" />
+                    <div><Badge tone="primary">{project.product_type || "AI product"}</Badge><h2 className="mt-3 text-lg font-semibold text-guard-ink">{project.name}</h2></div>
+                    <ArrowRight className="h-4 w-4 text-guard-muted transition group-hover:translate-x-1 group-hover:text-guard-primary" />
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{project.goal || project.description || "Structured AI evaluation project."}</p>
-                  <div className="mt-5 flex flex-wrap gap-4 border-t border-white/10 pt-4 text-xs text-slate-400">
+                  <p className="mt-2 text-sm leading-6 text-guard-muted">{project.goal || project.description || "Structured AI evaluation project."}</p>
+                  <div className="mt-5 flex flex-wrap gap-4 border-t border-guard-line pt-4 text-xs text-guard-muted">
                     <span>{project.prompt_versions?.length || 0} prompt versions</span>
                     <span>{testCases.length} test cases</span>
                     <span>{reviewed} reviewed</span>

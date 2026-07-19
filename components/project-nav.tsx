@@ -20,7 +20,7 @@ export function ProjectNav({ workspaceSlug, projectId }: { workspaceSlug: string
   const pathname = usePathname();
 
   return (
-    <div className="mb-6 overflow-x-auto border-b border-white/10">
+    <div className="mb-6 overflow-x-auto border-b border-guard-line">
       <nav className="flex min-w-max gap-2">
         {items.map(([label, path, Icon]) => {
           const href = projectPath(workspaceSlug, projectId, path);
@@ -34,8 +34,8 @@ export function ProjectNav({ workspaceSlug, projectId }: { workspaceSlug: string
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-t-md border-b-2 px-3 py-3 text-sm transition",
                 isActive
-                  ? "border-guard-cyan bg-guard-cyan/10 text-guard-cyan"
-                  : "border-transparent text-slate-300 hover:bg-white/5 hover:text-white"
+                  ? "border-guard-primary bg-guard-primarySoft text-guard-primaryHover"
+                  : "border-transparent text-guard-muted hover:bg-guard-surfaceMuted hover:text-guard-ink"
               )}
             >
               <Icon className="h-4 w-4" />

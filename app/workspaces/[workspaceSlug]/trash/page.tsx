@@ -43,10 +43,10 @@ export default async function TrashPage({ params }: { params: Promise<{ workspac
                 <div>
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="rounded-md bg-guard-red/10 p-2 text-guard-red"><Trash2 className="h-4 w-4" aria-hidden="true" /></span>
-                    <h2 className="text-lg font-semibold text-white">{project.name}</h2>
+                    <h2 className="text-lg font-semibold text-guard-ink">{project.name}</h2>
                     {project.product_type ? <Badge tone="neutral">{project.product_type}</Badge> : null}
                   </div>
-                  <div className="mt-4 grid gap-2 text-sm text-slate-300 md:grid-cols-2 md:gap-x-8">
+                  <div className="mt-4 grid gap-2 text-sm text-guard-muted md:grid-cols-2 md:gap-x-8">
                     <p>Moved to Trash on {new Date(trashedAt).toLocaleDateString()}</p>
                     <p>Scheduled for deletion on {purgeDate.toLocaleDateString()}</p>
                     <p className="flex items-center gap-2 text-slate-400 md:col-span-2">

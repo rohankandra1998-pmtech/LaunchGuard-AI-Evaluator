@@ -28,7 +28,7 @@ export function MoveProjectToTrashDialog({
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         className={cn(
-          "focus-ring flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-white/10 hover:text-white",
+          "focus-ring flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-guard-red transition hover:bg-guard-redSoft",
           triggerClassName
         )}
       >
@@ -45,14 +45,14 @@ export function MoveProjectToTrashDialog({
             dialogRef.current?.close();
           }
         }}
-        className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-white/10 bg-guard-panel p-0 text-left text-white shadow-2xl backdrop:bg-slate-950/80 backdrop:backdrop-blur-sm"
+        className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-guard-line bg-white p-0 text-left text-guard-text shadow-floating backdrop:bg-slate-900/35 backdrop:backdrop-blur-sm"
       >
         <div className="p-5 sm:p-6">
           <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-guard-red/15 text-guard-red">
             <Trash2 className="h-5 w-5" aria-hidden="true" />
           </div>
-          <h2 id={titleId} className="text-xl font-semibold text-white">Move {projectName} to Trash?</h2>
-          <p id={descriptionId} className="mt-2 text-sm leading-6 text-slate-300">
+          <h2 id={titleId} className="text-xl font-semibold text-guard-ink">Move {projectName} to Trash?</h2>
+          <p id={descriptionId} className="mt-2 text-sm leading-6 text-guard-muted">
             This project will be hidden from the workspace and permanently deleted after {PROJECT_TRASH_RETENTION_DAYS} days. You can restore it before then.
           </p>
           <form action={moveProjectToTrash} className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -62,7 +62,7 @@ export function MoveProjectToTrashDialog({
               type="button"
               autoFocus
               onClick={() => dialogRef.current?.close()}
-              className="focus-ring inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+              className="focus-ring inline-flex items-center justify-center rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text transition hover:bg-guard-surfaceMuted"
             >
               Cancel
             </button>

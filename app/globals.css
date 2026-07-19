@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -12,16 +12,48 @@
 
 body {
   margin: 0;
-  background: #07111f;
-  color: #e8f1ff;
+  background: #f7f7fc;
+  color: #39354d;
 }
 
 textarea,
 input,
 select {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 .focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-guard-cyan/70 focus:ring-offset-2 focus:ring-offset-guard-bg;
+  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-guard-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white;
+}
+
+::selection {
+  background: #cfc3ff;
+  color: #181629;
+}
+
+@keyframes variable-drawer-enter {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes variable-backdrop-enter {
+  from {
+    background-color: rgb(15 23 42 / 0%);
+    backdrop-filter: blur(0);
+  }
+}
+
+.prompt-variable-drawer[open] {
+  animation: variable-drawer-enter 180ms ease-out;
+}
+
+.prompt-variable-drawer[open]::backdrop {
+  animation: variable-backdrop-enter 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-variable-drawer[open],
+  .prompt-variable-drawer[open]::backdrop {
+    animation: none;
+  }
 }

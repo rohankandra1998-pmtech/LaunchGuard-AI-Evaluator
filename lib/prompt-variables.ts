@@ -93,26 +93,83 @@ export function legacyVariablesToSchema(keys: string[]): PromptVariable[] {
   })));
 }
 
-const doubleBracePattern = /{{\s*([a-z][a-z0-9_]*)\s*}}/g;
-const legacyBracePattern = /(^|[^{]){\s*([a-z][a-z0-9_]*)\s*}(?!})/g;
-const doubleBraceCandidatePattern = /{{\s*([^{}]*?)\s*}}/g;
+export type PromptSourceSegment =
+  | { kind: "text"; text: string }
+  | { kind: "placeholder"; text: string; key: string; status: "configured" | "unconfigured" | "malformed" };
+
+export type CompiledPromptSegment =
+  | { kind: "text"; text: string }
+  | { kind: "variable"; text: string; key: string; label: string };
+
+function pushTextSegment(segments: PromptSourceSegment[], text: string) {
+  if (!text) return;
+  const previous = segments.at(-1);
+  if (previous?.kind === "text") previous.text += text;
+  else segments.push({ kind: "text", text });
+}
+
+export function segmentPromptSource(prompt: string, variables: Pick<PromptVariable, "key">[] = []): PromptSourceSegment[] {
+  const configured = new Set(variables.map((variable) => variable.key));
+  const segments: PromptSourceSegment[] = [];
+  let textStart = 0;
+  let index = 0;
+
+  while (index < prompt.length) {
+    if (prompt.startsWith("{{", index)) {
+      pushTextSegment(segments, prompt.slice(textStart, index));
+      const closeIndex = prompt.indexOf("}}", index + 2);
+      const end = closeIndex === -1 ? prompt.length : closeIndex + 2;
+      const text = prompt.slice(index, end);
+      const key = closeIndex === -1 ? "" : text.slice(2, -2).trim();
+      const status = closeIndex !== -1 && PROMPT_VARIABLE_KEY_PATTERN.test(key)
+        ? configured.has(key) ? "configured" as const : "unconfigured" as const
+        : "malformed" as const;
+      segments.push({ kind: "placeholder", text, key, status });
+      index = end;
+      textStart = end;
+      continue;
+    }
+
+    if (prompt.startsWith("}}", index)) {
+      pushTextSegment(segments, prompt.slice(textStart, index));
+      segments.push({ kind: "placeholder", text: "}}", key: "", status: "malformed" });
+      index += 2;
+      textStart = index;
+      continue;
+    }
+
+    if (prompt[index] === "{" && prompt[index + 1] !== "{" && prompt[index - 1] !== "{") {
+      const closeIndex = prompt.indexOf("}", index + 1);
+      if (closeIndex !== -1 && prompt[closeIndex + 1] !== "}") {
+        const text = prompt.slice(index, closeIndex + 1);
+        const key = text.slice(1, -1).trim();
+        if (PROMPT_VARIABLE_KEY_PATTERN.test(key)) {
+          pushTextSegment(segments, prompt.slice(textStart, index));
+          segments.push({ kind: "placeholder", text, key, status: configured.has(key) ? "configured" : "unconfigured" });
+          index = closeIndex + 1;
+          textStart = index;
+          continue;
+        }
+      }
+    }
+
+    index += 1;
+  }
+
+  pushTextSegment(segments, prompt.slice(textStart));
+  return segments;
+}
 
 export function extractPromptPlaceholders(prompt: string) {
-  const keys: string[] = [];
-  for (const match of prompt.matchAll(doubleBracePattern)) keys.push(match[1]);
-  for (const match of prompt.matchAll(legacyBracePattern)) keys.push(match[2]);
-  return [...new Set(keys)];
+  return [...new Set(segmentPromptSource(prompt)
+    .filter((segment): segment is Extract<PromptSourceSegment, { kind: "placeholder" }> => segment.kind === "placeholder" && segment.status !== "malformed")
+    .map((segment) => segment.key))];
 }
 
 export function findMalformedPlaceholders(prompt: string) {
-  const malformed: string[] = [];
-  for (const match of prompt.matchAll(doubleBraceCandidatePattern)) {
-    const candidate = match[1].trim();
-    if (!PROMPT_VARIABLE_KEY_PATTERN.test(candidate)) malformed.push(match[0]);
-  }
-  const unmatched = prompt.replace(doubleBraceCandidatePattern, "");
-  if (unmatched.includes("{{") || unmatched.includes("}}")) malformed.push("unmatched double braces");
-  return [...new Set(malformed)];
+  return [...new Set(segmentPromptSource(prompt)
+    .filter((segment) => segment.kind === "placeholder" && segment.status === "malformed")
+    .map((segment) => segment.text === "}}" || !segment.text.endsWith("}}") ? "unmatched double braces" : segment.text))];
 }
 
 export function findDuplicateVariableKeys(variables: PromptVariable[]) {
@@ -169,15 +226,23 @@ export function resolvePromptVariableValues(variablesInput: unknown, values: Rec
   return Object.fromEntries(variables.map((variable) => [variable.key, typedValue(variable, values[variable.key])]));
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function replacePromptVariable(prompt: string, keyValue: string, replacement: string) {
-  const key = escapeRegex(keyValue);
-  return prompt
-    .replace(new RegExp(`{{\\s*${key}\\s*}}`, "g"), () => replacement)
-    .replace(new RegExp(`(^|[^{]){\\s*${key}\\s*}(?!})`, "g"), (_match, prefix: string) => `${prefix}${replacement}`);
+function compileSegments(
+  prompt: string,
+  variables: PromptVariable[],
+  resolvedValues: Record<string, string | number | boolean>
+): CompiledPromptSegment[] {
+  return segmentPromptSource(prompt, variables).map((segment): CompiledPromptSegment => {
+    if (segment.kind === "text" || segment.status !== "configured" || !Object.hasOwn(resolvedValues, segment.key)) {
+      return { kind: "text", text: segment.text };
+    }
+    const variable = variables.find((candidate) => candidate.key === segment.key)!;
+    return {
+      kind: "variable",
+      text: valueToPromptString(resolvedValues[segment.key]),
+      key: variable.key,
+      label: variable.label
+    };
+  });
 }
 
 export function assertPromptPlaceholdersConfigured(prompt: string, variablesInput: unknown) {
@@ -192,11 +257,8 @@ export function assertPromptPlaceholdersConfigured(prompt: string, variablesInpu
 export function compilePrompt(prompt: string, variablesInput: unknown, values: Record<string, unknown>) {
   const variables = assertPromptPlaceholdersConfigured(prompt, variablesInput);
   const resolvedValues = resolvePromptVariableValues(variables, values);
-  let compiledPrompt = prompt;
-  for (const variable of variables) {
-    const replacement = valueToPromptString(resolvedValues[variable.key]);
-    compiledPrompt = replacePromptVariable(compiledPrompt, variable.key, replacement);
-  }
+  const segments = compileSegments(prompt, variables, resolvedValues);
+  const compiledPrompt = segments.map((segment) => segment.text).join("");
   return { compiledPrompt, resolvedValues };
 }
 
@@ -208,23 +270,24 @@ export function compilePromptPreview(prompt: string, variablesInput: unknown, va
     const unresolved = findUnconfiguredPlaceholders(prompt, variables);
     if (malformed.length) errors.push(`Malformed placeholders: ${malformed.join(", ")}.`);
     if (unresolved.length) errors.push(`Unconfigured variables: ${unresolved.join(", ")}.`);
-    let compiledPrompt = prompt;
     const resolvedValues: Record<string, string | number | boolean> = {};
     for (const variable of variables) {
       try {
         const value = typedValue(variable, values[variable.key]);
         resolvedValues[variable.key] = value;
-        compiledPrompt = replacePromptVariable(compiledPrompt, variable.key, valueToPromptString(value));
       } catch (error) {
         errors.push(error instanceof Error ? error.message : `Could not resolve ${variable.label}.`);
       }
     }
-    return { compiledPrompt, resolvedValues, errors };
+    const segments = compileSegments(prompt, variables, resolvedValues);
+    const compiledPrompt = segments.map((segment) => segment.text).join("");
+    return { compiledPrompt, resolvedValues, errors, segments };
   } catch (error) {
     return {
       compiledPrompt: prompt,
       resolvedValues: {} as Record<string, string | number | boolean>,
-      errors: [error instanceof Error ? error.message : "Prompt variables could not be compiled."]
+      errors: [error instanceof Error ? error.message : "Prompt variables could not be compiled."],
+      segments: [{ kind: "text" as const, text: prompt }]
     };
   }
 }

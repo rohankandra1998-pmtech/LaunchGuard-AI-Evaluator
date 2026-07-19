@@ -113,11 +113,15 @@ This is a public collaborative prototype with no authentication or ownership con
 
 Every Prompt Version stores its own structured `variable_schema`, so historical versions remain reproducible when variables are added, removed, or changed. Supported types are `text`, `long_text`, `number`, `boolean`, and `select`. New placeholders use `{{variable_name}}`; legacy `{variable_name}` placeholders remain supported when compiling existing prompts.
 
-Create AI Project and all later version flows use the same Prompt Builder. Project creation captures Project Context first, then builds active Prompt Version 1 from the submitted structured variable schema. The builder detects placeholders, blocks unresolved or malformed variables, warns about configured variables that are unused, and provides typed example-value controls. Example values feed the read-only Final Prompt Preview and apply configured defaults, but they are temporary builder state and are not stored with the Prompt Version.
+Create AI Project and all later version flows use the same Prompt Builder. Project creation captures Project Context first, then builds active Prompt Version 1 from the submitted structured variable schema. The builder detects placeholders, blocks unresolved or malformed variables, warns about configured variables that are unused, and provides typed example-value controls. Configured placeholders are highlighted in the editor, resolved example values are highlighted in Final Prompt Preview, and users can copy the exact valid compiled prompt. Highlighting is visual only and never alters submitted prompt text. Example values feed the read-only Final Prompt Preview and apply configured defaults, but they are temporary builder state and are not stored with the Prompt Version.
 
 Run Test sends the compiled system prompt and a sample user message to the selected configured model, including before a new project is saved. Pre-creation and existing-project sandbox runs are ephemeral: LaunchGuard does not create projects, prompt versions, test cases, evaluation runs, generated outputs, reviews, ratings, or reports from them. Formal Golden Dataset evaluations remain separate and use the selected Prompt Version’s same variable schema and compiler.
 
 `projects.variables` remains as a legacy list of active variable keys. New projects derive it from Prompt Version 1’s structured variable keys; the migration backfills existing versions from legacy project values. Activating or editing the active version synchronizes the legacy list, while creating or editing an inactive draft does not change it.
+
+## Design System
+
+LaunchGuard uses one default light lavender-and-purple visual system. Purple is the primary brand and action color, while white and lavender surfaces establish hierarchy across pages, cards, forms, tables, and prompt workspaces. Green, amber, and red retain their semantic meanings for success, warning, and danger states. Dark mode is not implemented.
 
 ## Local Development
 

@@ -60,22 +60,22 @@ export function CriteriaWorkspace({
     <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
       <Card>
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-white">Suggest Criteria</h2>
-          <button onClick={suggestCriteria} disabled={pending || !activePrompt} className="focus-ring rounded-md bg-guard-cyan px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-60">
+          <h2 className="text-lg font-semibold text-guard-ink">Suggest Criteria</h2>
+          <button onClick={suggestCriteria} disabled={pending || !activePrompt} className="focus-ring rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
             {pending ? "Thinking..." : "Suggest Criteria"}
           </button>
         </div>
-        <p className="mt-2 text-sm text-slate-300">GPT-5 uses project context, variables, and the active prompt to suggest 5-7 human review criteria.</p>
+        <p className="mt-2 text-sm text-guard-muted">GPT-5 uses project context, variables, and the active prompt to suggest 5-7 human review criteria.</p>
         {error ? <p className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{error}</p> : null}
         <div className="mt-5 space-y-3">
           {suggestions.map((item) => (
-            <div key={item.name} className="rounded-md border border-white/10 bg-slate-950/35 p-4">
+            <div key={item.name} className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium text-white">{item.name}</p>
+                  <p className="font-medium text-guard-ink">{item.name}</p>
                   <p className="mt-1 text-sm text-slate-400">{item.description}</p>
                 </div>
-                <button onClick={() => accept(item)} className="rounded-md bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15">Accept</button>
+                <button onClick={() => accept(item)} className="focus-ring rounded-lg border border-guard-primaryLine bg-white px-3 py-2 text-sm font-medium text-guard-primaryHover hover:bg-guard-primarySoft">Accept</button>
               </div>
             </div>
           ))}
@@ -83,7 +83,7 @@ export function CriteriaWorkspace({
       </Card>
 
       <Card>
-        <h2 className="text-lg font-semibold text-white">Manual criterion</h2>
+        <h2 className="text-lg font-semibold text-guard-ink">Manual criterion</h2>
         <form action={saveCriterion} className="mt-4 grid gap-4">
           <input type="hidden" name="project_id" value={project.id} />
           <input type="hidden" name="workspace_slug" value={workspaceSlug} />
@@ -103,18 +103,18 @@ export function CriteriaWorkspace({
 
       <div className="lg:col-span-2">
         <Card>
-          <h2 className="text-lg font-semibold text-white">Saved Evaluation Criteria</h2>
+          <h2 className="text-lg font-semibold text-guard-ink">Saved Evaluation Criteria</h2>
           <div className="mt-4 grid gap-3">
             {criteria.length ? criteria.map((criterion) => (
-              <div key={criterion.id} className="rounded-md border border-white/10 bg-slate-950/35 p-4">
+              <div key={criterion.id} className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2"><p className="font-medium text-white">{criterion.name}</p>{criterion.category ? <Badge>{criterion.category}</Badge> : null}</div>
-                    <p className="mt-2 text-sm text-slate-300">{criterion.description}</p>
+                    <div className="flex items-center gap-2"><p className="font-medium text-guard-ink">{criterion.name}</p>{criterion.category ? <Badge>{criterion.category}</Badge> : null}</div>
+                    <p className="mt-2 text-sm text-guard-text">{criterion.description}</p>
                     <p className="mt-2 text-xs text-slate-400">Good: {criterion.good_definition}</p>
                     <details className="mt-4">
-                      <summary className="cursor-pointer text-sm font-medium text-guard-cyan">Edit criterion</summary>
-                      <form action={saveCriterion} className="mt-4 grid gap-4 rounded-md border border-white/10 bg-white/[0.03] p-4">
+                      <summary className="cursor-pointer text-sm font-medium text-guard-primary">Edit criterion</summary>
+                      <form action={saveCriterion} className="mt-4 grid gap-4 rounded-lg border border-guard-line bg-white p-4">
                         <input type="hidden" name="id" value={criterion.id} />
                         <input type="hidden" name="project_id" value={project.id} />
                         <input type="hidden" name="workspace_slug" value={workspaceSlug} />
