@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, FlaskConical, Pencil, Plus, Variable } from "lucide-react";
+import { AlertTriangle, FlaskConical, Pencil, Plus, Variable } from "lucide-react";
 import { createProject, createPromptVersion, updatePromptVersion } from "@/app/actions";
 import { CopyButton } from "@/components/copy-button";
 import { HighlightedPromptPreview } from "@/components/highlighted-prompt-preview";
@@ -232,6 +232,7 @@ export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
               <div>
                 <h2 className="text-lg font-semibold text-guard-ink">System Prompt Builder</h2>
                 <p className="mt-1 text-sm text-guard-muted">Use {"{{variable_name}}"} for version-specific inputs.</p>
+                <CompactVariableStatusSummary configured={variables.length} used={usedCount} unresolved={unresolved.length} />
               </div>
               <span className="text-xs text-guard-muted">{systemPrompt.length.toLocaleString()} characters</span>
             </div>
@@ -250,40 +251,30 @@ export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
               />
             </label>
 
-            <div className="mt-4 flex flex-wrap gap-2" aria-label="Prompt variable status">
-              <VariableStatusSummary configured={variables.length} used={usedCount} unresolved={unresolved.length} />
-            </div>
-
-            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end">
-              <div className="min-w-0 flex-1 rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-guard-primaryHover">Insert variable</p>
-                {variables.length ? (
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                    <Select
-                      aria-label="Variable to insert"
-                      value={insertKey}
-                      onChange={(event) => setInsertKey(event.target.value)}
-                      className="min-w-0 flex-1"
-                    >
-                      {variables.map((variable) => (
-                        <option key={variable.key} value={variable.key}>
-                          {variable.label} - {`{{${variable.key}}}`}
-                        </option>
-                      ))}
-                    </Select>
-                    <button
-                      type="button"
-                      onClick={insertVariable}
-                      className="focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-guard-primarySoft px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-surfaceStrong"
-                    >
-                      <Variable className="h-4 w-4" />
-                      Insert variable
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-guard-muted">Create a variable before inserting a placeholder.</p>
-                )}
-              </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                aria-label="Variable to insert"
+                value={insertKey}
+                onChange={(event) => setInsertKey(event.target.value)}
+                disabled={!variables.length}
+                className="min-w-0 flex-1"
+              >
+                {!variables.length ? <option value="">Create a variable before inserting</option> : null}
+                {variables.map((variable) => (
+                  <option key={variable.key} value={variable.key}>
+                    {variable.label} - {`{{${variable.key}}}`}
+                  </option>
+                ))}
+              </Select>
+              <button
+                type="button"
+                onClick={insertVariable}
+                disabled={!variables.length}
+                className="focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-guard-primarySoft px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-surfaceStrong disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Variable className="h-4 w-4" />
+                Insert variable
+              </button>
               <button
                 type="button"
                 onClick={() => openAdd()}
@@ -293,7 +284,6 @@ export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
                 Create variable
               </button>
             </div>
-
             <div className="mt-5" aria-live="polite">
               {blockingMessages.length ? (
                 <div className="rounded-md border border-guard-red/30 bg-guard-red/10 p-4 text-sm text-red-200">
@@ -302,12 +292,7 @@ export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
                     {blockingMessages.map((message) => <li key={message}>{message}</li>)}
                   </ul>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-guard-green">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Prompt placeholders are configured.
-                </div>
-              )}
+              ) : null}
               {unused.length ? (
                 <p className="mt-3 flex items-start gap-2 text-sm text-guard-amber">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -536,6 +521,25 @@ function VariableStatusSummary({ configured, used, unresolved }: { configured: n
   );
 }
 
+function CompactVariableStatusSummary({ configured, used, unresolved }: { configured: number; used: number; unresolved: number }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-guard-muted" aria-label="Prompt variable status">
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full bg-guard-green" aria-hidden="true" />
+        {configured} configured
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full bg-guard-primary" aria-hidden="true" />
+        {used} used
+      </span>
+      <span className={"inline-flex items-center gap-1.5 " + (unresolved ? "text-guard-amber" : "text-guard-muted")}>
+        <span className={"h-2 w-2 rounded-full " + (unresolved ? "bg-guard-amber" : "bg-slate-300")} aria-hidden="true" />
+        {unresolved} unresolved
+      </span>
+    </div>
+  );
+}
+
 function PersistentFormActions({
   cancelHref,
   canSave,
@@ -566,7 +570,7 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
   const hasTemporaryValue = hasVariableValue(value);
   const customTestValue = hasTemporaryValue && !defaultApplied;
   const requiredMissing = variable.required && !hasTemporaryValue && !defaultAvailable;
-  const displayValue = defaultApplied && !hasTemporaryValue ? variable.default_value : value;
+  const displayValue = value;
   const describedBy = variable.description ? helpId + " " + descriptionId : helpId;
 
   const statusLabel = defaultApplied
@@ -584,7 +588,9 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
         ? "bad"
         : "neutral";
   const helperCopy = defaultApplied
-    ? "Using the configured default. Edit this value to override it for this preview and test."
+    ? hasTemporaryValue
+      ? "Using the configured default. Edit this value to override it for this preview and test."
+      : "This field is blank, so the configured default is being used for the preview and sandbox test."
     : customTestValue
       ? defaultAvailable
         ? "This temporary value is used only for the preview and sandbox test. It does not change the configured default."
@@ -592,14 +598,6 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
       : requiredMissing
         ? "Enter a temporary value or configure a default before previewing or testing."
         : "No value is set. This optional variable compiles as an empty value.";
-
-  function changeValue(nextValue: unknown) {
-    if (!hasVariableValue(nextValue) && defaultAvailable) {
-      onChange(variable.default_value);
-      return;
-    }
-    onChange(nextValue);
-  }
 
   const fieldHeader = (
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -612,7 +610,7 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
       <div className="flex items-center gap-2">
         <Badge tone={statusTone}>{statusLabel}</Badge>
         {customTestValue && defaultAvailable ? (
-          <button type="button" onClick={() => onChange(variable.default_value)} className="focus-ring rounded-md px-2 py-1 text-xs font-semibold text-guard-primary hover:bg-guard-primarySoft">
+          <button type="button" onClick={() => onChange("")} className="focus-ring rounded-md px-2 py-1 text-xs font-semibold text-guard-primary hover:bg-guard-primarySoft">
             Use default
           </button>
         ) : null}
@@ -636,7 +634,7 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
         <TextArea
           id={inputId}
           value={String(displayValue ?? "")}
-          onChange={(event) => changeValue(event.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           className={"mt-2 min-h-24 " + (requiredMissing ? "border-guard-red hover:border-guard-red" : "")}
           placeholder={defaultAvailable ? "Configured default will be used" : undefined}
           aria-invalid={requiredMissing}
@@ -654,7 +652,7 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
         <Select
           id={inputId}
           value={String(displayValue ?? "")}
-          onChange={(event) => changeValue(event.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           className={"mt-2 " + (requiredMissing ? "border-guard-red hover:border-guard-red" : "")}
           aria-invalid={requiredMissing}
           aria-describedby={describedBy}
@@ -675,7 +673,7 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
         <Select
           id={inputId}
           value={String(displayValue ?? "")}
-          onChange={(event) => changeValue(event.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           className={"mt-2 " + (requiredMissing ? "border-guard-red hover:border-guard-red" : "")}
           aria-invalid={requiredMissing}
           aria-describedby={describedBy}
@@ -695,7 +693,7 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
         id={inputId}
         type={variable.type === "number" ? "number" : "text"}
         value={String(displayValue ?? "")}
-        onChange={(event) => changeValue(event.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         className={"mt-2 " + (requiredMissing ? "border-guard-red hover:border-guard-red" : "")}
         placeholder={defaultAvailable ? "Configured default will be used" : undefined}
         aria-invalid={requiredMissing}
