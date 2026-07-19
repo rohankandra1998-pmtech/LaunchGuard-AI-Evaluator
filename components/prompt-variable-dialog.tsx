@@ -148,7 +148,7 @@ export function PromptVariableDialog({
     close();
   }
 
-  const title = confirmingRemove ? `Remove ${draft.label || draft.key || "variable"}?` : variable ? "Edit Variable" : "Add Variable";
+  const title = confirmingRemove ? `Remove ${draft.label || draft.key || "variable"}?` : variable ? "Edit Variable" : "Create variable";
   const dialogDescription = confirmingRemove
     ? "The variable configuration will be removed. Any remaining placeholder will become unresolved and block testing or saving."
     : variable
@@ -299,7 +299,7 @@ export function PromptVariableDialog({
                 ) : (
                   <TextInput id={defaultId} type={draft.type === "number" ? "number" : "text"} value={defaultValue} onChange={(event) => { setDefaultValue(event.target.value); clearError("default_value"); }} className={`mt-2 ${errors.default_value ? "border-guard-red hover:border-guard-red" : ""}`} aria-invalid={Boolean(errors.default_value)} aria-describedby={`${defaultHelpId}${errors.default_value ? ` ${defaultErrorId}` : ""}`} />
                 )}
-                <p id={defaultHelpId} className="mt-1.5 text-xs text-guard-muted">The value used when none is provided at runtime.</p>
+                <p id={defaultHelpId} className="mt-1.5 text-xs text-guard-muted">{draft.required ? "This default satisfies the required variable when no test value is provided." : "The value used when no test value is provided."}</p>
                 {errors.default_value ? <p id={defaultErrorId} className="mt-1.5 text-xs font-medium text-guard-red">{errors.default_value}</p> : null}
               </div>
 
