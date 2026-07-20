@@ -17,19 +17,21 @@ import {
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AlertCircle, Check, GripVertical, Info, Loader2, MoreHorizontal, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
-import { deleteCriterion, reorderCriteria, saveCriterion } from "@/app/actions";
+import { deleteCriterion, reorderCriteria, saveCriterion, saveSuggestedCriteria } from "@/app/actions";
 import { Badge, EmptyState, Select, TextArea, TextInput } from "@/components/ui";
+import { criterionFieldLimits, validateCriterion, type CriterionField, type CriterionValidationErrors, type SuggestedCriterionInput } from "@/lib/criteria";
 import type { EvaluationCriterion, Project, PromptVersion } from "@/lib/types";
 
-type SuggestedCriterion = {
-  name: string;
-  description: string;
-  good_definition: string;
-  average_definition: string;
-  bad_definition: string;
-  category: string;
+type SuggestedCriterion = SuggestedCriterionInput;
+type CriterionDraft = SuggestedCriterionInput;
+type LocalSuggestion = {
+  id: string;
+  draft: SuggestedCriterion;
+  editSnapshot: SuggestedCriterion | null;
+  isEditing: boolean;
+  validationErrors: CriterionValidationErrors;
 };
-type CriterionDraft = SuggestedCriterion;
+type ResultMessage = { tone: "status" | "error"; text: string };
 type DrawerState = { type: "create" } | { type: "edit"; criterion: EvaluationCriterion } | { type: "suggestions" } | null;
 type UndoSnapshot = { previous: EvaluationCriterion[]; saved: EvaluationCriterion[] };
 type ReorderToast = { message: string; tone: "success" | "error"; undo?: UndoSnapshot };
@@ -109,52 +111,189 @@ function Definition({ tone, label, children, className = "" }: { tone: "good" | 
   return <div className={`min-w-0 border-t border-guard-line pt-4 lg:border-l lg:border-t-0 lg:px-4 lg:pt-0 ${className}`}><p className={`text-xs font-semibold ${color}`}>{label}</p><p className="mt-2 text-sm leading-5 text-guard-text">{children}</p></div>;
 }
 
-function SuggestionCard({ item, pending, onAccept }: { item: SuggestedCriterion; pending: boolean; onAccept: () => void }) {
+function SuggestionEditField({ suggestionId, field, label, required = false, value, error, disabled, multiline = false, onChange }: { suggestionId: string; field: CriterionField; label: string; required?: boolean; value: string; error?: string; disabled: boolean; multiline?: boolean; onChange: (value: string) => void }) {
+  const inputId = `${suggestionId}-${field}`;
+  const errorId = `${inputId}-error`;
+  const props = {
+    id: inputId,
+    required,
+    maxLength: criterionFieldLimits[field],
+    value,
+    disabled,
+    "aria-invalid": Boolean(error),
+    "aria-describedby": error ? errorId : undefined,
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value)
+  };
+  return <label className="grid gap-2 text-sm font-semibold text-guard-ink"><span>{label}{required ? <span className="ml-1 text-guard-red" aria-hidden="true">*</span> : null}</span>{multiline ? <TextArea {...props} className="min-h-24" /> : <TextInput {...props} />}{error ? <span id={errorId} className="text-xs font-medium text-guard-red">{error}</span> : null}</label>;
+}
+
+function SuggestionCard({ item, saving, actionsDisabled, onEdit, onUpdate, onSaveEdit, onCancelEdit, onAccept }: { item: LocalSuggestion; saving: boolean; actionsDisabled: boolean; onEdit: () => void; onUpdate: (field: CriterionField, value: string) => void; onSaveEdit: () => void; onCancelEdit: () => void; onAccept: () => void }) {
+  if (item.isEditing) {
+    return (
+      <article aria-busy={actionsDisabled} className="rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted p-4 sm:p-5">
+        <form onSubmit={(event) => { event.preventDefault(); onSaveEdit(); }} className="grid gap-4">
+          <SuggestionEditField suggestionId={item.id} field="name" label="Name" required value={item.draft.name} error={item.validationErrors.name} disabled={actionsDisabled} onChange={(value) => onUpdate("name", value)} />
+          <SuggestionEditField suggestionId={item.id} field="category" label="Category" value={item.draft.category} error={item.validationErrors.category} disabled={actionsDisabled} onChange={(value) => onUpdate("category", value)} />
+          <SuggestionEditField suggestionId={item.id} field="description" label="Description" required multiline value={item.draft.description} error={item.validationErrors.description} disabled={actionsDisabled} onChange={(value) => onUpdate("description", value)} />
+          <SuggestionEditField suggestionId={item.id} field="good_definition" label="Good definition" required multiline value={item.draft.good_definition} error={item.validationErrors.good_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("good_definition", value)} />
+          <SuggestionEditField suggestionId={item.id} field="average_definition" label="Average definition" required multiline value={item.draft.average_definition} error={item.validationErrors.average_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("average_definition", value)} />
+          <SuggestionEditField suggestionId={item.id} field="bad_definition" label="Bad definition" required multiline value={item.draft.bad_definition} error={item.validationErrors.bad_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("bad_definition", value)} />
+          <div className="flex flex-col-reverse gap-2 min-[430px]:flex-row min-[430px]:justify-end"><button type="button" onClick={onCancelEdit} disabled={actionsDisabled} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold hover:bg-guard-surfaceMuted disabled:opacity-50">Cancel</button><button type="submit" disabled={actionsDisabled} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-3 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300"><Check aria-hidden="true" className="h-4 w-4" />Save changes</button></div>
+        </form>
+      </article>
+    );
+  }
+
   return (
-    <article className="rounded-xl border border-guard-line bg-guard-surfaceMuted p-4 sm:p-5">
+    <article aria-busy={saving} className="rounded-xl border border-guard-line bg-guard-surfaceMuted p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-guard-ink">{item.name}</h3>{item.category ? <Badge tone="primary">{item.category}</Badge> : null}</div><p className="mt-2 text-sm leading-6 text-guard-muted">{item.description}</p></div>
-        <button type="button" onClick={onAccept} disabled={pending} className="focus-ring inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-60">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}{pending ? "Adding..." : "Add criterion"}</button>
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words font-semibold text-guard-ink">{item.draft.name}</h3>{item.draft.category ? <Badge tone="primary">{item.draft.category}</Badge> : null}</div><p className="mt-2 break-words text-sm leading-6 text-guard-muted">{item.draft.description}</p></div>
+        <div className="flex shrink-0 flex-wrap gap-2"><button id={`edit-${item.id}`} type="button" onClick={onEdit} disabled={actionsDisabled} className="focus-ring inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-ink hover:bg-guard-surfaceMuted disabled:opacity-50"><Pencil aria-hidden="true" className="h-4 w-4" />Edit</button><button type="button" onClick={onAccept} disabled={actionsDisabled} aria-label={`Add ${item.draft.name || "suggested"} criterion`} className="focus-ring inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-60">{saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}{saving ? "Adding..." : "Add criterion"}</button></div>
       </div>
-      <dl className="mt-4 grid gap-3 text-sm"><div><dt className="font-semibold text-guard-green">Good</dt><dd className="mt-1 leading-5">{item.good_definition}</dd></div><div><dt className="font-semibold text-guard-amber">Average</dt><dd className="mt-1 leading-5">{item.average_definition}</dd></div><div><dt className="font-semibold text-guard-red">Bad</dt><dd className="mt-1 leading-5">{item.bad_definition}</dd></div></dl>
+      <dl className="mt-4 grid gap-3 text-sm"><div><dt className="font-semibold text-guard-green">Good</dt><dd className="mt-1 break-words leading-5">{item.draft.good_definition}</dd></div><div><dt className="font-semibold text-guard-amber">Average</dt><dd className="mt-1 break-words leading-5">{item.draft.average_definition}</dd></div><div><dt className="font-semibold text-guard-red">Bad</dt><dd className="mt-1 break-words leading-5">{item.draft.bad_definition}</dd></div></dl>
     </article>
   );
 }
 
+function localSuggestion(draft: SuggestedCriterion): LocalSuggestion {
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `suggestion-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return { id, draft: { ...draft }, editSnapshot: null, isEditing: false, validationErrors: validateCriterion(draft) };
+}
+
+function saveResultMessage(insertedCount: number, skippedCount: number, individual = false) {
+  if (individual && !insertedCount) return "This criterion already exists and was not added.";
+  if (!insertedCount && skippedCount) return "All remaining suggestions already exist.";
+  const added = `${insertedCount} ${insertedCount === 1 ? "criterion" : "criteria"} added.`;
+  return skippedCount ? `${added} ${skippedCount} ${skippedCount === 1 ? "duplicate was" : "duplicates were"} skipped.` : added;
+}
+
 function SuggestionsDrawer({ workspaceSlug, projectId, onClose }: { workspaceSlug: string; projectId: string; onClose: () => void }) {
   const router = useRouter();
-  const [suggestions, setSuggestions] = useState<SuggestedCriterion[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<LocalSuggestion[]>([]);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [resultMessage, setResultMessage] = useState<ResultMessage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingIndex, setSavingIndex] = useState<number | null>(null);
-  const [acceptedCount, setAcceptedCount] = useState(0);
-  async function loadSuggestions(signal?: AbortSignal) {
-    setLoading(true); setError(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const mountedRef = useRef(true);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  async function loadSuggestions() {
+    const controller = new AbortController();
+    controllerRef.current?.abort();
+    controllerRef.current = controller;
+    setLoading(true); setGenerationError(null); setResultMessage(null); setSuggestions([]); setCompleted(false);
     try {
-      const response = await fetch("/api/ai/suggest-criteria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId }), signal });
+      const response = await fetch("/api/ai/suggest-criteria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId }), signal: controller.signal });
       const body: { criteria?: SuggestedCriterion[]; error?: string } = await response.json();
-      if (!response.ok || !body.criteria) throw new Error(body.error || "Could not suggest criteria.");
-      setSuggestions(body.criteria);
+      if (!response.ok || !Array.isArray(body.criteria)) throw new Error(body.error || "Could not suggest criteria.");
+      if (mountedRef.current && controllerRef.current === controller) setSuggestions(body.criteria.map(localSuggestion));
     } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      setError(caught instanceof Error ? caught.message : "Could not suggest criteria.");
-    } finally { setLoading(false); }
+      if (caught instanceof Error && caught.name === "AbortError") return;
+      if (mountedRef.current && controllerRef.current === controller) setGenerationError(caught instanceof Error ? caught.message : "Could not suggest criteria.");
+    } finally {
+      if (mountedRef.current && controllerRef.current === controller) setLoading(false);
+    }
   }
-  useEffect(() => { const controller = new AbortController(); void loadSuggestions(controller.signal); return () => controller.abort(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  async function accept(item: SuggestedCriterion, index: number) {
-    setSavingIndex(index); setError(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void loadSuggestions();
+    return () => { mountedRef.current = false; controllerRef.current?.abort(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function requestClose() {
+    if (savingId || batchSaving) return;
+    controllerRef.current?.abort();
+    onClose();
+  }
+
+  function updateSuggestion(id: string, update: (item: LocalSuggestion) => LocalSuggestion) {
+    setSuggestions((current) => current.map((item) => item.id === id ? update(item) : item));
+  }
+
+  function beginEdit(id: string) {
+    setResultMessage(null);
+    updateSuggestion(id, (item) => ({ ...item, editSnapshot: { ...item.draft }, isEditing: true, validationErrors: {} }));
+  }
+
+  function updateDraft(id: string, field: CriterionField, value: string) {
+    updateSuggestion(id, (item) => ({ ...item, draft: { ...item.draft, [field]: value }, validationErrors: { ...item.validationErrors, [field]: undefined } }));
+  }
+
+  function saveEdit(id: string) {
+    const item = suggestions.find((candidate) => candidate.id === id);
+    if (!item) return;
+    const validationErrors = validateCriterion(item.draft);
+    if (Object.keys(validationErrors).length) {
+      updateSuggestion(id, (current) => ({ ...current, validationErrors }));
+      return;
+    }
+    updateSuggestion(id, (current) => ({ ...current, editSnapshot: null, isEditing: false, validationErrors: {} }));
+  }
+
+  function cancelEdit(id: string) {
+    updateSuggestion(id, (item) => {
+      const draft = item.editSnapshot ? { ...item.editSnapshot } : item.draft;
+      return { ...item, draft, editSnapshot: null, isEditing: false, validationErrors: validateCriterion(draft) };
+    });
+    window.requestAnimationFrame(() => document.getElementById(`edit-${id}`)?.focus());
+  }
+
+  async function accept(id: string) {
+    const item = suggestions.find((candidate) => candidate.id === id);
+    if (!item) return;
+    const validationErrors = validateCriterion(item.draft);
+    if (Object.keys(validationErrors).length) {
+      updateSuggestion(id, (current) => ({ ...current, editSnapshot: { ...current.draft }, isEditing: true, validationErrors }));
+      setResultMessage({ tone: "error", text: "Fix the highlighted fields before adding this criterion." });
+      return;
+    }
+    setSavingId(id); setResultMessage(null);
     try {
-      const form = new FormData(); form.set("workspace_slug", workspaceSlug); form.set("project_id", projectId); Object.entries(item).forEach(([key, value]) => form.set(key, value));
-      await saveCriterion(form); setSuggestions((current) => current.filter((candidate) => candidate !== item)); setAcceptedCount((current) => current + 1); router.refresh();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Criterion could not be added."); }
-    finally { setSavingIndex(null); }
+      const result = await saveSuggestedCriteria(workspaceSlug, projectId, [item.draft]);
+      setSuggestions((current) => current.filter((candidate) => candidate.id !== id));
+      setCompleted(true);
+      setResultMessage({ tone: "status", text: saveResultMessage(result.insertedCount, result.skippedNames.length, true) });
+      router.refresh();
+    } catch {
+      setResultMessage({ tone: "error", text: "This criterion could not be added. Your edits were preserved; please try again." });
+    } finally { setSavingId(null); }
   }
-  const pending = loading || savingIndex !== null;
+
+  async function addAll() {
+    const invalid = suggestions.filter((item) => Object.keys(validateCriterion(item.draft)).length);
+    if (invalid.length) {
+      setSuggestions((current) => current.map((item) => ({ ...item, validationErrors: validateCriterion(item.draft) })));
+      setResultMessage({ tone: "error", text: "Fix the highlighted fields before adding all criteria." });
+      return;
+    }
+    setBatchSaving(true); setResultMessage(null);
+    const submittedIds = new Set(suggestions.map((item) => item.id));
+    try {
+      const result = await saveSuggestedCriteria(workspaceSlug, projectId, suggestions.map((item) => item.draft));
+      setSuggestions((current) => current.filter((item) => !submittedIds.has(item.id)));
+      setCompleted(true);
+      setResultMessage({ tone: "status", text: saveResultMessage(result.insertedCount, result.skippedNames.length) });
+      router.refresh();
+    } catch {
+      setResultMessage({ tone: "error", text: "The suggestions could not be added. Your edits were preserved; please try again." });
+    } finally { setBatchSaving(false); }
+  }
+
+  const saving = savingId !== null || batchSaving;
+  const hasInvalidSuggestion = suggestions.some((item) => Object.keys(validateCriterion(item.draft)).length > 0);
+  const hasEditingSuggestion = suggestions.some((item) => item.isEditing);
+  const addAllDisabled = loading || !suggestions.length || saving || hasInvalidSuggestion || hasEditingSuggestion;
+  const footer = <div className="flex flex-col-reverse gap-3 min-[430px]:flex-row min-[430px]:justify-end"><button type="button" onClick={requestClose} disabled={saving} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold hover:bg-guard-surfaceMuted disabled:opacity-50">Done</button><button type="button" onClick={() => void addAll()} disabled={addAllDisabled} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300">{batchSaving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}{batchSaving ? "Adding all..." : "Add all"}</button></div>;
+
   return (
-    <DrawerShell title="AI-suggested criteria" description="Suggestions are based on the project context, variables, and active prompt." pending={pending} onClose={onClose} footer={<div className="flex justify-end"><button type="button" onClick={onClose} disabled={pending} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold hover:bg-guard-surfaceMuted disabled:opacity-50">Done</button></div>}>
-      {loading ? <div aria-label="Loading AI suggestions" className="grid gap-4">{[0, 1, 2].map((item) => <div key={item} className="animate-pulse rounded-xl border border-guard-line bg-guard-surfaceMuted p-5"><div className="h-4 w-2/5 rounded bg-guard-lineStrong" /><div className="mt-3 h-3 w-full rounded bg-guard-line" /><div className="mt-2 h-3 w-4/5 rounded bg-guard-line" /><div className="mt-5 h-16 rounded bg-white" /></div>)}</div>
-      : error && !suggestions.length ? <div role="alert" className="rounded-xl border border-red-200 bg-guard-redSoft p-5 text-center"><AlertCircle className="mx-auto h-6 w-6 text-guard-red" /><h3 className="mt-3 font-semibold text-guard-ink">Suggestions could not be loaded</h3><p className="mt-2 text-sm leading-6">{error}</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover">Retry</button></div>
-      : <div className="grid gap-4">{error ? <div role="alert" className="flex gap-2 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div> : null}{suggestions.length ? suggestions.map((item, index) => <SuggestionCard key={`${item.name}-${index}`} item={item} pending={savingIndex === index} onAccept={() => void accept(item, index)} />) : acceptedCount ? <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Check className="mx-auto h-6 w-6 text-guard-green" /><h3 className="mt-3 font-semibold text-guard-ink">All suggestions added</h3><p className="mt-2 text-sm text-guard-muted">They are now available in your saved evaluation criteria.</p></div> : <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Sparkles className="mx-auto h-6 w-6 text-guard-primary" /><h3 className="mt-3 font-semibold text-guard-ink">No suggestions returned</h3><p className="mt-2 text-sm text-guard-muted">Try generating a fresh set of rubric criteria.</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Retry</button></div>}</div>}
+    <DrawerShell title="AI-suggested criteria" description="Suggestions identify gaps based on the active prompt and your saved criteria." pending={saving} onClose={requestClose} footer={footer}>
+      {resultMessage ? <div role={resultMessage.tone === "error" ? "alert" : "status"} className={`mb-4 flex gap-2 rounded-lg border p-3 text-sm ${resultMessage.tone === "error" ? "border-red-200 bg-guard-redSoft text-guard-red" : "border-green-200 bg-guard-greenSoft text-guard-green"}`}>{resultMessage.tone === "error" ? <AlertCircle aria-hidden="true" className="h-4 w-4 shrink-0" /> : <Check aria-hidden="true" className="h-4 w-4 shrink-0" />}{resultMessage.text}</div> : null}
+      {loading ? <div aria-label="Loading AI suggestions" aria-busy="true" className="grid gap-4">{[0, 1, 2].map((item) => <div key={item} className="animate-pulse rounded-xl border border-guard-line bg-guard-surfaceMuted p-5"><div className="h-4 w-2/5 rounded bg-guard-lineStrong" /><div className="mt-3 h-3 w-full rounded bg-guard-line" /><div className="mt-2 h-3 w-4/5 rounded bg-guard-line" /><div className="mt-5 h-16 rounded bg-white" /></div>)}</div>
+      : generationError ? <div role="alert" className="rounded-xl border border-red-200 bg-guard-redSoft p-5 text-center"><AlertCircle aria-hidden="true" className="mx-auto h-6 w-6 text-guard-red" /><h3 className="mt-3 font-semibold text-guard-ink">Suggestions could not be loaded</h3><p className="mt-2 text-sm leading-6">{generationError}</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover">Retry</button></div>
+      : <div className="grid gap-4" aria-busy={saving}>{suggestions.length ? suggestions.map((item) => <SuggestionCard key={item.id} item={item} saving={savingId === item.id} actionsDisabled={saving} onEdit={() => beginEdit(item.id)} onUpdate={(field, value) => updateDraft(item.id, field, value)} onSaveEdit={() => saveEdit(item.id)} onCancelEdit={() => cancelEdit(item.id)} onAccept={() => void accept(item.id)} />) : completed ? <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Check aria-hidden="true" className="mx-auto h-6 w-6 text-guard-green" /><h3 className="mt-3 font-semibold text-guard-ink">All suggestions added</h3><p className="mt-2 text-sm text-guard-muted">All suggestions have been added or were already present in the rubric.</p></div> : <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Sparkles aria-hidden="true" className="mx-auto h-6 w-6 text-guard-primary" /><h3 className="mt-3 font-semibold text-guard-ink">Your rubric is well covered</h3><p className="mt-2 text-sm leading-6 text-guard-muted">No meaningful additional criteria were identified based on the active prompt and your saved criteria.</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Regenerate</button></div>}</div>}
     </DrawerShell>
   );
 }

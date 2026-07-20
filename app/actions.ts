@@ -8,6 +8,7 @@ import { parseJsonObject, ratingLabelToScore } from "@/lib/utils";
 import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
+import { normalizeCriterionName, parseCriterionInput, type SuggestedCriterionInput } from "@/lib/criteria";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
@@ -388,6 +389,67 @@ export async function saveCriterion(formData: FormData) {
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Criterion does not belong to this project.");
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
+}
+
+export async function saveSuggestedCriteria(
+  workspaceSlug: string,
+  projectId: string,
+  criteria: SuggestedCriterionInput[]
+): Promise<{ insertedCount: number; skippedNames: string[] }> {
+  const supabase = await createClient();
+  const validatedWorkspaceSlug = assertWorkspaceSlug(workspaceSlug);
+  const validatedProjectId = assertUuid(projectId, "Project ID");
+  await requireWorkspaceProject(supabase, validatedWorkspaceSlug, validatedProjectId);
+  if (!Array.isArray(criteria)) throw new Error("Suggested criteria must be an array.");
+  if (criteria.length > 3) throw new Error("No more than three suggested criteria can be saved at once.");
+
+  const validatedCriteria = criteria.map(parseCriterionInput);
+  const { data: existingCriteria, error: existingError } = await supabase
+    .from("evaluation_criteria")
+    .select("name")
+    .eq("project_id", validatedProjectId);
+  if (existingError) throw existingError;
+
+  const knownNames = new Set((existingCriteria || []).map((criterion) => normalizeCriterionName(criterion.name)));
+  const submittedNames = new Set<string>();
+  const skippedNames: string[] = [];
+  const uniqueCriteria = validatedCriteria.filter((criterion) => {
+    const normalizedName = normalizeCriterionName(criterion.name);
+    if (knownNames.has(normalizedName) || submittedNames.has(normalizedName)) {
+      skippedNames.push(criterion.name);
+      return false;
+    }
+    submittedNames.add(normalizedName);
+    return true;
+  });
+
+  if (!uniqueCriteria.length) return { insertedCount: 0, skippedNames };
+
+  const orderResult = await supabase
+    .from("evaluation_criteria")
+    .select("sort_order")
+    .eq("project_id", validatedProjectId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (orderResult.error && orderResult.error.code !== "42703") throw orderResult.error;
+
+  const nextSortOrder = (orderResult.data?.sort_order ?? -1) + 1;
+  const rows = uniqueCriteria.map((criterion, index) => ({
+    project_id: validatedProjectId,
+    name: criterion.name,
+    description: criterion.description,
+    good_definition: criterion.good_definition,
+    average_definition: criterion.average_definition,
+    bad_definition: criterion.bad_definition,
+    category: criterion.category || null,
+    ...(orderResult.error?.code === "42703" ? {} : { sort_order: nextSortOrder + index })
+  }));
+  const { error: insertError } = await supabase.from("evaluation_criteria").insert(rows);
+  if (insertError) throw insertError;
+
+  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/review");
+  return { insertedCount: rows.length, skippedNames };
 }
 
 export async function reorderCriteria(workspaceSlug: string, projectId: string, orderedCriterionIds: string[]) {

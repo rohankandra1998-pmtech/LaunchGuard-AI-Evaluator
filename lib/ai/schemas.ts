@@ -1,16 +1,17 @@
 import { z } from "zod";
+import { criterionFieldLimits } from "@/lib/criteria";
+
+export const suggestedCriterionSchema = z.object({
+  name: z.string().max(criterionFieldLimits.name),
+  description: z.string().max(criterionFieldLimits.description),
+  good_definition: z.string().max(criterionFieldLimits.good_definition),
+  average_definition: z.string().max(criterionFieldLimits.average_definition),
+  bad_definition: z.string().max(criterionFieldLimits.bad_definition),
+  category: z.string().max(criterionFieldLimits.category)
+});
 
 export const suggestedCriteriaSchema = z.object({
-  criteria: z.array(
-    z.object({
-      name: z.string(),
-      description: z.string(),
-      good_definition: z.string(),
-      average_definition: z.string(),
-      bad_definition: z.string(),
-      category: z.string()
-    })
-  )
+  criteria: z.array(suggestedCriterionSchema).max(3)
 });
 
 export const generatedTestCasesSchema = z.object({
