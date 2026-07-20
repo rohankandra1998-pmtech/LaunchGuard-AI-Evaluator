@@ -60,6 +60,7 @@ create table public.evaluation_criteria (
   average_definition text not null,
   bad_definition text not null,
   category text,
+  sort_order integer not null default 0 check (sort_order >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -133,6 +134,7 @@ create index projects_workspace_trashed_at_idx on public.projects(workspace_id, 
 create index projects_trashed_at_idx on public.projects(trashed_at) where trashed_at is not null;
 create index prompt_versions_project_created_idx on public.prompt_versions(project_id, created_at desc);
 create index evaluation_criteria_project_created_idx on public.evaluation_criteria(project_id, created_at desc);
+create index evaluation_criteria_project_sort_order_idx on public.evaluation_criteria(project_id, sort_order, created_at, id);
 create index test_cases_project_status_idx on public.test_cases(project_id, status, created_at desc);
 create index test_cases_prompt_version_idx on public.test_cases(prompt_version_id) where prompt_version_id is not null;
 create index eval_runs_project_created_idx on public.eval_runs(project_id, created_at desc);
@@ -157,6 +159,69 @@ begin
   return new;
 end;
 $$;
+
+create or replace function public.reorder_evaluation_criteria(
+  p_project_id uuid,
+  p_ordered_ids uuid[]
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  submitted_count integer;
+  distinct_count integer;
+  project_count integer;
+begin
+  if p_project_id is null then
+    raise exception 'Project ID is required.' using errcode = '22023';
+  end if;
+  if p_ordered_ids is null then
+    raise exception 'Ordered criterion IDs are required.' using errcode = '22023';
+  end if;
+  if array_position(p_ordered_ids, null) is not null then
+    raise exception 'Ordered criterion IDs cannot contain null values.' using errcode = '22023';
+  end if;
+
+  select count(*), count(distinct criterion_id)
+  into submitted_count, distinct_count
+  from unnest(p_ordered_ids) as submitted(criterion_id);
+
+  if submitted_count <> distinct_count then
+    raise exception 'Ordered criterion IDs cannot contain duplicates.' using errcode = '22023';
+  end if;
+
+  select count(*) into project_count
+  from public.evaluation_criteria
+  where project_id = p_project_id;
+
+  if submitted_count <> project_count then
+    raise exception 'Ordered criterion IDs must include every criterion in the project.' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from unnest(p_ordered_ids) as submitted(criterion_id)
+    where not exists (
+      select 1 from public.evaluation_criteria as criterion
+      where criterion.id = submitted.criterion_id
+        and criterion.project_id = p_project_id
+    )
+  ) then
+    raise exception 'One or more criteria do not belong to this project.' using errcode = '22023';
+  end if;
+
+  update public.evaluation_criteria as criterion
+  set sort_order = (submitted.position - 1)::integer
+  from unnest(p_ordered_ids) with ordinality as submitted(criterion_id, position)
+  where criterion.id = submitted.criterion_id
+    and criterion.project_id = p_project_id;
+end;
+$$;
+
+revoke execute on function public.reorder_evaluation_criteria(uuid, uuid[]) from public;
+grant execute on function public.reorder_evaluation_criteria(uuid, uuid[]) to anon, authenticated;
 
 create or replace function public.purge_expired_trashed_projects()
 returns bigint

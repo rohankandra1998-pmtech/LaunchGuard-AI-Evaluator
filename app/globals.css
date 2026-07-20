@@ -66,4 +66,8 @@ select {
   .criterion-drawer[open]::backdrop {
     animation: none;
   }
+
+  .criterion-sortable-row {
+    transition-duration: 0ms !important;
+  }
 }

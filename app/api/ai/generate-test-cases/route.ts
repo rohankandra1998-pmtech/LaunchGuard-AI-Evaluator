@@ -14,7 +14,7 @@ export async function POST(request: Request) {
 
     const [{ data: prompt, error: promptError }, { data: criteria, error: criteriaError }] = await Promise.all([
       supabase.from("prompt_versions").select("*").eq("project_id", project_id).eq("is_active", true).maybeSingle(),
-      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id)
+      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id).order("sort_order").order("created_at").order("id")
     ]);
     if (promptError) throw promptError;
     if (criteriaError) throw criteriaError;

@@ -60,6 +60,7 @@ export type EvaluationCriterion = {
   average_definition: string;
   bad_definition: string;
   category: string | null;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 };

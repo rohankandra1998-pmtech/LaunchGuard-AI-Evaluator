@@ -76,6 +76,32 @@
 
 final result: passed
 
+## Evaluation Criteria Persistent Ordering - July 19, 2026
+
+- Reference: `C:\Users\Rohan\AppData\Local\Temp\codex-clipboard-1c5c9620-0c4d-4535-abd9-0fc10159833a.png`
+- Desktop normal state: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-desktop-normal.png`
+- Desktop reorder state: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-desktop-reorder.png`
+- Desktop retryable save error: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-desktop-save-error.png`
+- Mobile reorder viewport: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-mobile-reorder-viewport.png`
+- Viewports: 1870 x 997 desktop and 390 x 844 mobile.
+
+**Findings**
+
+- The reference and implementation were inspected together at original detail. The implementation preserves the established compact rubric rows, lavender surfaces, semantic Good/Average/Bad columns, existing icon system, and action hierarchy; reorder mode adds only the controls and affordances needed for the new task.
+- Reorder mode clears the search and category filters, renders the complete rubric, hides row edit/overflow actions, disables create/suggestion actions, and presents explicit Cancel and Save order controls.
+- Desktop has no horizontal document overflow. At 390 px, the content region is 358 px wide, actions stack, criterion definitions stack, and drag handles remain isolated touch targets without forcing page overflow.
+- No actionable P0, P1, or P2 visual differences remain in the persistent-ordering scope.
+
+**Interaction and Accessibility QA**
+
+- Keyboard sorting was exercised with Space, Arrow Down, and Space; the criterion moved from position 1 to position 2 and the live region announced the resulting position.
+- Escape during an active keyboard drag restored the pre-drag draft and announced cancellation.
+- Pointer and touch sensors are scoped to the far-left handle. Touch activation uses a delay/tolerance constraint and `touch-action: none` only on the handle, preserving scrolling elsewhere.
+- Save is disabled until the draft changes. During save, Cancel, Save, and handles are disabled; a failed RPC keeps the draft in reorder mode, restores the controls, and exposes a retryable inline alert.
+- The live development database did not have the new migration, so successful persistence/reload could not be exercised. The pre-migration read fallback preserved the existing deterministic order, and the missing RPC produced the expected visible recovery state. Successful persistence is covered by the atomic migration/RPC implementation and requires applying `20260719233000_evaluation_criteria_sort_order.sql`.
+
+final result: passed
+
 ## Evaluation Criteria Rubric Builder - July 19, 2026
 
 - Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 19, 2026, 05_07_09 PM.png`

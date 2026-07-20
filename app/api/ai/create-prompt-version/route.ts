@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const [{ data: prompt }, { data: report }, { data: criteria }, { data: reviews }, { data: testCases }] = await Promise.all([
       supabase.from("prompt_versions").select("*").eq("project_id", project_id).eq("is_active", true).maybeSingle(),
       supabase.from("error_analysis_reports").select("*").eq("project_id", project_id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id),
+      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id).order("sort_order").order("created_at").order("id"),
       supabase.from("human_reviews").select("*, human_review_ratings(*)").eq("project_id", project_id),
       supabase.from("test_cases").select("*").eq("project_id", project_id).eq("status", "reviewed")
     ]);

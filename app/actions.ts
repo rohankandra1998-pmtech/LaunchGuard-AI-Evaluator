@@ -371,12 +371,53 @@ export async function saveCriterion(formData: FormData) {
     throw new Error("All criterion definitions are required.");
   }
 
-  const result = id
-    ? await supabase.from("evaluation_criteria").update(payload).eq("id", assertUuid(id, "Criterion ID")).eq("project_id", projectId).select("id").maybeSingle()
-    : await supabase.from("evaluation_criteria").insert(payload).select("id").single();
+  let result;
+  if (id) {
+    result = await supabase.from("evaluation_criteria").update(payload).eq("id", assertUuid(id, "Criterion ID")).eq("project_id", projectId).select("id").maybeSingle();
+  } else {
+    const { data: lastCriterion, error: orderError } = await supabase
+      .from("evaluation_criteria")
+      .select("sort_order")
+      .eq("project_id", projectId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (orderError) throw orderError;
+    result = await supabase.from("evaluation_criteria").insert({ ...payload, sort_order: (lastCriterion?.sort_order ?? -1) + 1 }).select("id").single();
+  }
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Criterion does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
+}
+
+export async function reorderCriteria(workspaceSlug: string, projectId: string, orderedCriterionIds: string[]) {
+  const supabase = await createClient();
+  const validatedWorkspaceSlug = assertWorkspaceSlug(workspaceSlug);
+  const validatedProjectId = assertUuid(projectId, "Project ID");
+  await requireWorkspaceProject(supabase, validatedWorkspaceSlug, validatedProjectId);
+
+  if (!Array.isArray(orderedCriterionIds)) throw new Error("Criterion order is required.");
+  const validatedIds = orderedCriterionIds.map((id) => assertUuid(id, "Criterion ID"));
+  if (new Set(validatedIds).size !== validatedIds.length) throw new Error("Criterion order cannot contain duplicates.");
+
+  const { data: currentCriteria, error: criteriaError } = await supabase
+    .from("evaluation_criteria")
+    .select("id")
+    .eq("project_id", validatedProjectId);
+  if (criteriaError) throw criteriaError;
+
+  const currentIds = (currentCriteria || []).map((criterion) => criterion.id);
+  const submittedSet = new Set(validatedIds);
+  if (validatedIds.length !== currentIds.length || currentIds.some((id) => !submittedSet.has(id))) {
+    throw new Error("Criterion order must include every criterion in this project exactly once.");
+  }
+
+  const { error } = await supabase.rpc("reorder_evaluation_criteria", {
+    p_project_id: validatedProjectId,
+    p_ordered_ids: validatedIds
+  });
+  if (error) throw new Error(`Criterion order could not be saved: ${error.message}`);
+  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/review");
 }
 
 export async function deleteCriterion(formData: FormData) {
@@ -387,7 +428,7 @@ export async function deleteCriterion(formData: FormData) {
   const { data, error } = await supabase.from("evaluation_criteria").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Criterion does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
 }
 
 export async function saveTestCase(formData: FormData) {

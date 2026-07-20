@@ -2,8 +2,21 @@
 
 import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Check, Info, Loader2, MoreHorizontal, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
-import { deleteCriterion, saveCriterion } from "@/app/actions";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent
+} from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { AlertCircle, Check, GripVertical, Info, ListRestart, Loader2, MoreHorizontal, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
+import { deleteCriterion, reorderCriteria, saveCriterion } from "@/app/actions";
 import { Badge, EmptyState, Select, TextArea, TextInput } from "@/components/ui";
 import type { EvaluationCriterion, Project, PromptVersion } from "@/lib/types";
 
@@ -88,9 +101,9 @@ function CriterionDrawer({ mode, criterion, workspaceSlug, projectId, onClose }:
   );
 }
 
-function Definition({ tone, label, children }: { tone: "good" | "average" | "bad"; label: string; children: React.ReactNode }) {
+function Definition({ tone, label, children, className = "" }: { tone: "good" | "average" | "bad"; label: string; children: React.ReactNode; className?: string }) {
   const color = { good: "text-guard-green", average: "text-guard-amber", bad: "text-guard-red" }[tone];
-  return <div className="min-w-0 border-t border-guard-line pt-4 lg:border-l lg:border-t-0 lg:px-4 lg:pt-0"><p className={`text-xs font-semibold ${color}`}>{label}</p><p className="mt-2 text-sm leading-5 text-guard-text">{children}</p></div>;
+  return <div className={`min-w-0 border-t border-guard-line pt-4 lg:border-l lg:border-t-0 lg:px-4 lg:pt-0 ${className}`}><p className={`text-xs font-semibold ${color}`}>{label}</p><p className="mt-2 text-sm leading-5 text-guard-text">{children}</p></div>;
 }
 
 function SuggestionCard({ item, pending, onAccept }: { item: SuggestedCriterion; pending: boolean; onAccept: () => void }) {
@@ -144,37 +157,97 @@ function SuggestionsDrawer({ workspaceSlug, projectId, onClose }: { workspaceSlu
 }
 
 export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criteria }: { workspaceSlug: string; project: Project; activePrompt: PromptVersion | null; criteria: EvaluationCriterion[] }) {
+  const router = useRouter();
+  const instructionId = useId();
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const [persistedCriteria, setPersistedCriteria] = useState(criteria);
+  const [reorderDraft, setReorderDraft] = useState(criteria);
+  const [isReordering, setIsReordering] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const [savingOrder, startOrderTransition] = useTransition();
   const triggerRef = useRef<HTMLElement | null>(null);
-  const categories = useMemo(() => Array.from(new Set(criteria.map((item) => item.category).filter((item): item is string => Boolean(item)))).sort((a, b) => a.localeCompare(b)), [criteria]);
-  const visibleCriteria = useMemo(() => { const query = search.trim().toLocaleLowerCase(); return criteria.filter((item) => (!query || item.name.toLocaleLowerCase().includes(query) || item.description.toLocaleLowerCase().includes(query)) && (category === "all" || item.category === category)); }, [category, criteria, search]);
-  function openDrawer(next: Exclude<DrawerState, null>, trigger: HTMLElement) { triggerRef.current = trigger; setDrawer(next); }
+  const dragStartOrderRef = useRef<EvaluationCriterion[] | null>(null);
+  const criteriaSignature = criteria.map((criterion) => `${criterion.id}:${criterion.updated_at}:${criterion.sort_order}`).join("|");
+  const lastCriteriaSignatureRef = useRef(criteriaSignature);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  useEffect(() => {
+    if (!isReordering && criteriaSignature !== lastCriteriaSignatureRef.current) {
+      setPersistedCriteria(criteria);
+      setReorderDraft(criteria);
+      lastCriteriaSignatureRef.current = criteriaSignature;
+    }
+  }, [criteria, criteriaSignature, isReordering]);
+  const categories = useMemo(() => Array.from(new Set(persistedCriteria.map((item) => item.category).filter((item): item is string => Boolean(item)))).sort((a, b) => a.localeCompare(b)), [persistedCriteria]);
+  const visibleCriteria = useMemo(() => { const query = search.trim().toLocaleLowerCase(); return persistedCriteria.filter((item) => (!query || item.name.toLocaleLowerCase().includes(query) || item.description.toLocaleLowerCase().includes(query)) && (category === "all" || item.category === category)); }, [category, persistedCriteria, search]);
+  const orderChanged = reorderDraft.some((criterion, index) => criterion.id !== persistedCriteria[index]?.id);
+  function openDrawer(next: Exclude<DrawerState, null>, trigger: HTMLElement) { if (isReordering) return; triggerRef.current = trigger; setDrawer(next); }
   function closeDrawer() { setDrawer(null); window.requestAnimationFrame(() => triggerRef.current?.focus()); }
-  const count = `${criteria.length} ${criteria.length === 1 ? "criterion" : "criteria"}`;
+  function startReordering() { if (persistedCriteria.length < 2) return; setSearch(""); setCategory("all"); setReorderDraft(persistedCriteria); setReorderError(null); setAnnouncement("Reorder mode started. Use a drag handle to move a criterion."); setIsReordering(true); }
+  function cancelReordering() { setReorderDraft(persistedCriteria); setReorderError(null); setAnnouncement("Reordering canceled. The saved order was restored."); setIsReordering(false); }
+  function beginDrag() { dragStartOrderRef.current = reorderDraft; }
+  function cancelDrag() {
+    if (dragStartOrderRef.current) setReorderDraft(dragStartOrderRef.current);
+    dragStartOrderRef.current = null;
+    setAnnouncement("Active drag canceled. The draft order was restored.");
+  }
+  function moveCriterion(event: DragOverEvent) {
+    if (!event.over || event.active.id === event.over.id || savingOrder) return;
+    setReorderDraft((current) => {
+      const oldIndex = current.findIndex((item) => item.id === event.active.id);
+      const newIndex = current.findIndex((item) => item.id === event.over?.id);
+      return oldIndex < 0 || newIndex < 0 ? current : arrayMove(current, oldIndex, newIndex);
+    });
+    setReorderError(null);
+  }
+  function finishDrag(event: DragEndEvent) { const index = reorderDraft.findIndex((item) => item.id === event.active.id); const criterion = reorderDraft[index]; dragStartOrderRef.current = null; if (criterion) setAnnouncement(`Moved “${criterion.name}” to position ${index + 1} of ${reorderDraft.length}.`); }
+  function saveOrder() {
+    if (!orderChanged || savingOrder) return;
+    setReorderError(null);
+    startOrderTransition(async () => {
+      try {
+        await reorderCriteria(workspaceSlug, project.id, reorderDraft.map((criterion) => criterion.id));
+        const saved = reorderDraft.map((criterion, index) => ({ ...criterion, sort_order: index }));
+        setPersistedCriteria(saved); setReorderDraft(saved); setAnnouncement("Criterion order saved."); setIsReordering(false); router.refresh();
+      } catch (caught) { setReorderError(caught instanceof Error ? caught.message : "Criterion order could not be saved."); }
+    });
+  }
+  const count = `${persistedCriteria.length} ${persistedCriteria.length === 1 ? "criterion" : "criteria"}`;
+  const displayedCriteria = isReordering ? reorderDraft : visibleCriteria;
   return (
     <>
       <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div><p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-guard-primary">Human rubric</p><h1 className="text-3xl font-semibold tracking-tight text-guard-ink">Evaluation Criteria</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-guard-muted">Define Good, Average, and Bad for each criterion so reviewers score outputs consistently.</p></div>
         <div className="flex flex-wrap gap-3">
-          <span className="group relative"><button type="button" disabled={!activePrompt} aria-describedby={!activePrompt ? "suggest-disabled-help" : undefined} onClick={(e) => openDrawer({ type: "suggestions" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"><Sparkles className="h-4 w-4" />Suggest with AI</button>{!activePrompt ? <span id="suggest-disabled-help" role="tooltip" className="pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-56 rounded-lg bg-guard-ink px-3 py-2 text-xs text-white shadow-floating group-hover:block group-focus-within:block">Activate a prompt version to generate suggestions.</span> : null}</span>
-          <button type="button" onClick={(e) => openDrawer({ type: "create" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover"><Plus className="h-4 w-4" />Add criterion</button>
+          <span className="group relative"><button type="button" disabled={isReordering || !activePrompt} aria-describedby={!activePrompt ? "suggest-disabled-help" : undefined} onClick={(e) => openDrawer({ type: "suggestions" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"><Sparkles className="h-4 w-4" />Suggest with AI</button>{!activePrompt ? <span id="suggest-disabled-help" role="tooltip" className="pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-56 rounded-lg bg-guard-ink px-3 py-2 text-xs text-white shadow-floating group-hover:block group-focus-within:block">Activate a prompt version to generate suggestions.</span> : null}</span>
+          <button type="button" disabled={isReordering} onClick={(e) => openDrawer({ type: "create" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300"><Plus className="h-4 w-4" />Add criterion</button>
         </div>
       </div>
       <aside className="mb-7 flex gap-3 rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted px-4 py-3.5"><Info className="mt-0.5 h-5 w-5 shrink-0 text-guard-primary" /><div><p className="text-sm font-semibold text-guard-ink">These criteria are used during Human Review</p><p className="mt-1 text-sm leading-5 text-guard-muted">Reviewers score each response using your definitions of Good, Average, and Bad.</p></div></aside>
       <section aria-labelledby="saved-criteria-heading">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div><div className="flex flex-wrap items-center gap-2.5"><h2 id="saved-criteria-heading" className="text-xl font-semibold text-guard-ink">Saved Evaluation Criteria</h2><Badge tone="primary">{count}</Badge></div><p className="mt-1.5 text-sm text-guard-muted">Manage the rubric reviewers use to evaluate AI responses.</p></div>
-          {criteria.length ? <div className="flex flex-col gap-3 sm:flex-row"><label className="relative sm:w-64"><span className="sr-only">Search criteria</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-guard-muted" /><TextInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search criteria..." className="h-10 pl-9" /></label><label><span className="sr-only">Filter by category</span><Select value={category} onChange={(e) => setCategory(e.target.value)} className="h-10 min-w-48"><option value="all">All categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</Select></label></div> : null}
+          <div><div className="flex flex-wrap items-center gap-2.5"><h2 id="saved-criteria-heading" className="text-xl font-semibold text-guard-ink">Saved Evaluation Criteria</h2><Badge tone="primary">{count}</Badge></div><p id={instructionId} className="mt-1.5 text-sm text-guard-muted">{isReordering ? "Drag criteria into the order reviewers should see them." : "Manage the rubric reviewers use to evaluate AI responses."}</p></div>
+          {persistedCriteria.length ? isReordering ? <div className="flex flex-col-reverse gap-3 sm:flex-row"><button type="button" onClick={cancelReordering} disabled={savingOrder} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">Cancel</button><button type="button" onClick={saveOrder} disabled={!orderChanged || savingOrder} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300">{savingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{savingOrder ? "Saving order..." : "Save order"}</button></div> : <div className="flex flex-col gap-3 sm:flex-row"><label className="relative sm:w-64"><span className="sr-only">Search criteria</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-guard-muted" /><TextInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search criteria..." className="h-10 pl-9" /></label><label><span className="sr-only">Filter by category</span><Select value={category} onChange={(e) => setCategory(e.target.value)} className="h-10 min-w-48"><option value="all">All categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</Select></label><button type="button" onClick={startReordering} disabled={persistedCriteria.length < 2} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:border-guard-primaryLine hover:bg-guard-primarySoft hover:text-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"><ListRestart className="h-4 w-4" />Reorder</button></div> : null}
         </div>
-        <div className="mt-5 grid gap-3">
-          {!criteria.length ? <EmptyState title="Build your human review rubric"><span>Define the standards reviewers will use to score AI responses.</span><span className="mt-5 flex flex-col justify-center gap-3 sm:flex-row"><button type="button" onClick={(e) => openDrawer({ type: "create" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add criterion</button>{activePrompt ? <button type="button" onClick={(e) => openDrawer({ type: "suggestions" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover"><Sparkles className="h-4 w-4" />Suggest with AI</button> : null}</span></EmptyState>
-          : !visibleCriteria.length ? <EmptyState title="No criteria match your filters"><span>Try a different search or category.</span><span className="mt-5 flex justify-center"><button type="button" onClick={() => { setSearch(""); setCategory("all"); }} className="focus-ring rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover">Clear filters</button></span></EmptyState>
-          : visibleCriteria.map((criterion) => <CriterionRow key={criterion.id} criterion={criterion} workspaceSlug={workspaceSlug} projectId={project.id} editing={drawer?.type === "edit" && drawer.criterion.id === criterion.id} onEdit={(trigger) => openDrawer({ type: "edit", criterion }, trigger)} />)}
-        </div>
-        {criteria.length && (search || category !== "all") ? <p className="mt-3 text-xs text-guard-muted">Showing {visibleCriteria.length} of {criteria.length} criteria</p> : null}
+        {reorderError ? <div role="alert" className="mt-4 flex gap-2 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{reorderError}</div> : null}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={beginDrag} onDragOver={moveCriterion} onDragCancel={cancelDrag} onDragEnd={finishDrag}>
+          <SortableContext items={displayedCriteria.map((criterion) => criterion.id)} strategy={verticalListSortingStrategy}>
+            <div className="mt-5 grid gap-3" aria-describedby={isReordering ? instructionId : undefined} aria-busy={savingOrder}>
+              {!persistedCriteria.length ? <EmptyState title="Build your human review rubric"><span>Define the standards reviewers will use to score AI responses.</span><span className="mt-5 flex flex-col justify-center gap-3 sm:flex-row"><button type="button" onClick={(e) => openDrawer({ type: "create" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add criterion</button>{activePrompt ? <button type="button" onClick={(e) => openDrawer({ type: "suggestions" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover"><Sparkles className="h-4 w-4" />Suggest with AI</button> : null}</span></EmptyState>
+              : !displayedCriteria.length ? <EmptyState title="No criteria match your filters"><span>Try a different search or category.</span><span className="mt-5 flex justify-center"><button type="button" onClick={() => { setSearch(""); setCategory("all"); }} className="focus-ring rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover">Clear filters</button></span></EmptyState>
+              : displayedCriteria.map((criterion) => <CriterionRow key={criterion.id} criterion={criterion} workspaceSlug={workspaceSlug} projectId={project.id} editing={drawer?.type === "edit" && drawer.criterion.id === criterion.id} reorderMode={isReordering} reorderPending={savingOrder} instructionId={instructionId} onEdit={(trigger) => openDrawer({ type: "edit", criterion }, trigger)} />)}
+            </div>
+          </SortableContext>
+        </DndContext>
+        {persistedCriteria.length && !isReordering && (search || category !== "all") ? <p className="mt-3 text-xs text-guard-muted">Showing {visibleCriteria.length} of {persistedCriteria.length} criteria</p> : null}
       </section>
+      <p aria-live="polite" className="sr-only">{announcement}</p>
       {drawer?.type === "create" ? <CriterionDrawer mode="create" workspaceSlug={workspaceSlug} projectId={project.id} onClose={closeDrawer} /> : null}
       {drawer?.type === "edit" ? <CriterionDrawer mode="edit" criterion={drawer.criterion} workspaceSlug={workspaceSlug} projectId={project.id} onClose={closeDrawer} /> : null}
       {drawer?.type === "suggestions" ? <SuggestionsDrawer workspaceSlug={workspaceSlug} projectId={project.id} onClose={closeDrawer} /> : null}
@@ -182,15 +255,20 @@ export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criter
   );
 }
 
-function CriterionRow({ criterion, workspaceSlug, projectId, editing, onEdit }: { criterion: EvaluationCriterion; workspaceSlug: string; projectId: string; editing: boolean; onEdit: (trigger: HTMLButtonElement) => void }) {
+function CriterionRow({ criterion, workspaceSlug, projectId, editing, reorderMode, reorderPending, instructionId, onEdit }: { criterion: EvaluationCriterion; workspaceSlug: string; projectId: string; editing: boolean; reorderMode: boolean; reorderPending: boolean; instructionId: string; onEdit: (trigger: HTMLButtonElement) => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: criterion.id, disabled: !reorderMode || reorderPending });
+  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined };
   return (
-    <article className={`grid gap-4 rounded-xl border bg-white p-4 shadow-sm lg:grid-cols-[minmax(13rem,1.35fr)_repeat(3,minmax(9rem,1fr))_5rem] lg:gap-0 ${editing ? "border-guard-primaryLine bg-guard-primarySoft/30 ring-1 ring-guard-primary/10" : "border-guard-line"}`}>
-      <div className="min-w-0 lg:pr-5"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-guard-ink">{criterion.name}</h3>{criterion.category ? <Badge tone="primary">{criterion.category}</Badge> : null}</div><p className="mt-2 text-sm leading-5 text-guard-muted">{criterion.description}</p></div>
-      <Definition tone="good" label="Good">{criterion.good_definition}</Definition><Definition tone="average" label="Average">{criterion.average_definition}</Definition><Definition tone="bad" label="Bad">{criterion.bad_definition}</Definition>
-      <div className="flex items-start justify-end gap-1 border-t border-guard-line pt-3 lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
+    <article ref={setNodeRef} style={style} className={`criterion-sortable-row relative grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-4 rounded-xl border bg-white p-4 shadow-sm lg:gap-x-0 lg:gap-y-0 ${reorderMode ? "lg:grid-cols-[2rem_minmax(13rem,1.35fr)_repeat(3,minmax(9rem,1fr))]" : "lg:grid-cols-[2rem_minmax(13rem,1.35fr)_repeat(3,minmax(9rem,1fr))_5rem]"} ${isDragging ? "border-guard-primaryLine opacity-90 shadow-floating ring-2 ring-guard-primary/20" : editing ? "border-guard-primaryLine bg-guard-primarySoft/30 ring-1 ring-guard-primary/10" : "border-guard-line"}`}>
+      <div className="row-span-5 flex items-start justify-center lg:row-span-1">
+        {reorderMode ? <button type="button" disabled={reorderPending} {...attributes} {...listeners} aria-label={`Drag to reorder ${criterion.name}`} aria-describedby={instructionId} className="focus-ring -ml-2 flex h-9 w-9 touch-none cursor-grab items-center justify-center rounded-lg text-guard-primary hover:bg-guard-primarySoft active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"><GripVertical className="h-5 w-5" /></button> : <span role="img" aria-label="Select Reorder to change criterion order." className="-ml-2 flex h-9 w-9 items-center justify-center text-guard-muted/55"><GripVertical className="h-5 w-5" /></span>}
+      </div>
+      <div className="col-start-2 min-w-0 lg:col-start-auto lg:pr-5"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-guard-ink">{criterion.name}</h3>{criterion.category ? <Badge tone="primary">{criterion.category}</Badge> : null}</div><p className="mt-2 text-sm leading-5 text-guard-muted">{criterion.description}</p></div>
+      <Definition tone="good" label="Good" className="col-start-2 lg:col-start-auto">{criterion.good_definition}</Definition><Definition tone="average" label="Average" className="col-start-2 lg:col-start-auto">{criterion.average_definition}</Definition><Definition tone="bad" label="Bad" className="col-start-2 lg:col-start-auto">{criterion.bad_definition}</Definition>
+      {!reorderMode ? <div className="col-start-2 flex items-start justify-end gap-1 border-t border-guard-line pt-3 lg:col-start-auto lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
         <button type="button" aria-label={`Edit ${criterion.name}`} onClick={(e) => onEdit(e.currentTarget)} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-primaryLine text-guard-primary hover:bg-guard-primarySoft"><Pencil className="h-4 w-4" /></button>
         <details className="relative"><summary aria-label={`More actions for ${criterion.name}`} className="focus-ring flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-guard-line text-guard-muted hover:bg-guard-surfaceMuted [&::-webkit-details-marker]:hidden"><MoreHorizontal className="h-4 w-4" /></summary><div className="absolute right-0 top-11 z-20 w-44 rounded-xl border border-guard-line bg-white p-1.5 shadow-floating"><form action={deleteCriterion}><input type="hidden" name="id" value={criterion.id} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="workspace_slug" value={workspaceSlug} /><button type="submit" onClick={(e) => { if (!window.confirm(`Delete “${criterion.name}”? This criterion will no longer be available for future reviews.`)) e.preventDefault(); }} className="focus-ring flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-guard-red hover:bg-guard-redSoft"><Trash2 className="h-4 w-4" />Delete criterion</button></form></div></details>
-      </div>
+      </div> : null}
     </article>
   );
 }
