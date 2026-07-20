@@ -47,13 +47,23 @@ select {
   animation: variable-drawer-enter 180ms ease-out;
 }
 
+.criterion-drawer[open] {
+  animation: variable-drawer-enter 180ms ease-out;
+}
+
 .prompt-variable-drawer[open]::backdrop {
+  animation: variable-backdrop-enter 180ms ease-out;
+}
+
+.criterion-drawer[open]::backdrop {
   animation: variable-backdrop-enter 180ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .prompt-variable-drawer[open],
-  .prompt-variable-drawer[open]::backdrop {
+  .prompt-variable-drawer[open]::backdrop,
+  .criterion-drawer[open],
+  .criterion-drawer[open]::backdrop {
     animation: none;
   }
 }

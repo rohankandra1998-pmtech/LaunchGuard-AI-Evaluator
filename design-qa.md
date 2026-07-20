@@ -75,3 +75,60 @@
 - P3: the current LaunchGuard app shell differs from the conceptual navigation shown in the visual reference; this was intentionally left unchanged because the requested scope is the variable editor.
 
 final result: passed
+
+## Evaluation Criteria Rubric Builder - July 19, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 19, 2026, 05_07_09 PM.png`
+- Desktop implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-desktop.png`
+- Desktop edit-drawer implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-edit-desktop.png`
+- Mobile implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-mobile.png`
+- Mobile drawer implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-mobile-drawer.png`
+- Combined full-view comparison: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-comparison.png`
+- Viewports: 1680 x 944 desktop and 390 x 844 mobile.
+- State: saved criteria with the Clarity criterion selected in the Edit criterion drawer.
+
+**Findings**
+
+- No actionable P0, P1, or P2 findings remain.
+- Fonts and typography: the implementation retains LaunchGuard's existing font stack and weight scale while matching the reference's compact title, labels, badge, rubric-row, and drawer hierarchy. No visible copy is clipped at the tested viewports.
+- Spacing and layout rhythm: the desktop view uses a compact header, subdued information bar, dense full-width rubric rows, and a 576 px right drawer. Mobile stacks all rubric sections and uses a 390 px full-width sheet without horizontal page overflow.
+- Colors and visual tokens: all surfaces, borders, shadows, primary actions, and semantic Good/Average/Bad treatments use existing `guard-*` tokens. The dimmed drawer backdrop keeps the underlying selected row legible.
+- Image quality and asset fidelity: the reference contains no raster content that belongs in the product UI. Standard interface symbols use the existing Lucide library; no placeholder art or handcrafted SVG was introduced.
+- Copy and content: the page, callout, controls, empty states, drawers, rubric labels, and actions use the requested product copy while omitting unsupported statistics and reordering.
+- Accessibility and behavior: native dialogs expose labelled titles and descriptions, trap focus, focus the first create/edit field, restore focus to their trigger, close with Escape, lock body scrolling, and refuse close while an AI request or save is pending.
+
+**Browser QA**
+
+- Verified the page loads with saved criteria as the primary content.
+- Verified Add opens empty fields; a temporary criterion was created through the real server action and appeared in the list.
+- Verified Edit prefills every value; the temporary criterion was updated and the changed name appeared in the list.
+- Verified Cancel and Escape close without saving and restore trigger focus.
+- Verified search and category filters independently reduce the rendered criteria.
+- Verified delete is only in the overflow menu, requires confirmation, and removed the temporary QA criterion, restoring the original data.
+- Verified the AI drawer requests suggestions immediately. The live endpoint returned an empty set during QA; the resulting retryable empty state was corrected and individual acceptance remains wired through `saveCriterion`.
+- Verified 390 x 844 layout width equals the viewport, card content stacks vertically, and the full-width drawer retains sticky actions.
+- Browser console reported no warnings or errors.
+
+**Comparison History**
+
+- Initial interaction pass found a P2 focus mismatch: native dialog opening placed focus on Close instead of the first criterion field. The drawer shell now explicitly focuses its marked initial field after opening; the post-fix browser check reports `activeName: name`.
+- Initial AI edge-case pass found a P2 copy issue when the endpoint returned zero suggestions: it incorrectly displayed “All suggestions added.” The state now distinguishes accepted suggestions from an empty API result and offers Retry.
+- Post-fix side-by-side comparison confirms the requested lavender surface, row density, semantic definition columns, selected-row treatment, right drawer proportions, and action hierarchy. Differences from the reference are intentional: fake statistics, persistent ordering, and unsupported navigation elements are omitted.
+
+**Implementation Checklist**
+
+- [x] Compact saved-criteria workspace
+- [x] Search and existing-category filtering
+- [x] Responsive Good/Average/Bad rows
+- [x] Reusable accessible right-side drawer shell
+- [x] Create and edit criterion flows
+- [x] AI loading, error, retry, empty, and accept states
+- [x] Overflow delete with confirmation
+- [x] Empty and filtered-results states
+- [x] Desktop and mobile verification
+
+**Follow-up Polish**
+
+- P3: if the AI service frequently returns zero criteria in production, add server-side minimum-length validation to the structured response schema so that condition is surfaced as a generation error.
+
+final result: passed
