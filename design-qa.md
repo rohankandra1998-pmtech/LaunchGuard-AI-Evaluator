@@ -98,7 +98,7 @@ final result: passed
 - Escape during an active keyboard drag restored the pre-drag draft and announced cancellation.
 - Pointer and touch sensors are scoped to the far-left handle. Touch activation uses a delay/tolerance constraint and `touch-action: none` only on the handle, preserving scrolling elsewhere.
 - Save is disabled until the draft changes. During save, Cancel, Save, and handles are disabled; a failed RPC keeps the draft in reorder mode, restores the controls, and exposes a retryable inline alert.
-- The live development database did not have the new migration, so successful persistence/reload could not be exercised. The pre-migration read fallback preserved the existing deterministic order, and the missing RPC produced the expected visible recovery state. Successful persistence is covered by the atomic migration/RPC implementation and requires applying `20260719233000_evaluation_criteria_sort_order.sql`.
+- The missing-migration recovery state was verified first. The migration was then applied to Supabase project `nwabcbdcbjubfmoyszdz`; schema, constraints, index, grants, deterministic backfill, and migration history were verified. A caller-level RPC test executed successfully under the app's `anon` role and the saved rows remained ordered `0, 1, 2`.
 
 final result: passed
 
