@@ -50,18 +50,19 @@ on conflict (project_id, version_number) do update set
   is_active = excluded.is_active,
   variable_schema = excluded.variable_schema;
 
-insert into public.evaluation_criteria (id, project_id, name, description, good_definition, average_definition, bad_definition, category)
+insert into public.evaluation_criteria (id, project_id, name, description, good_definition, average_definition, bad_definition, category, sort_order)
 values
-  ('40000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Policy accuracy', 'Uses refund policy correctly.', 'Answer matches policy and avoids unsupported claims.', 'Mostly correct but omits a relevant condition.', 'Contradicts policy or invents a refund rule.', 'Correctness'),
-  ('40000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', 'Missing context handling', 'Responds safely when order context is absent.', 'Asks a useful clarifying question.', 'Mentions uncertainty but still overreaches.', 'Invents details or guarantees an outcome.', 'Safety'),
-  ('40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', 'Tone', 'Keeps a calm support tone.', 'Helpful, concise, and empathetic.', 'Understandable but stiff or too verbose.', 'Dismissive, defensive, or confusing.', 'Experience')
+  ('40000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Policy accuracy', 'Uses refund policy correctly.', 'Answer matches policy and avoids unsupported claims.', 'Mostly correct but omits a relevant condition.', 'Contradicts policy or invents a refund rule.', 'Correctness', 0),
+  ('40000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', 'Missing context handling', 'Responds safely when order context is absent.', 'Asks a useful clarifying question.', 'Mentions uncertainty but still overreaches.', 'Invents details or guarantees an outcome.', 'Safety', 1),
+  ('40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', 'Tone', 'Keeps a calm support tone.', 'Helpful, concise, and empathetic.', 'Understandable but stiff or too verbose.', 'Dismissive, defensive, or confusing.', 'Experience', 2)
 on conflict (id) do update set
   name = excluded.name,
   description = excluded.description,
   good_definition = excluded.good_definition,
   average_definition = excluded.average_definition,
   bad_definition = excluded.bad_definition,
-  category = excluded.category;
+  category = excluded.category,
+  sort_order = excluded.sort_order;
 
 insert into public.test_cases (id, project_id, user_input, case_type, variable_values, expected_answer)
 values

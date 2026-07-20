@@ -61,7 +61,7 @@ The schema explicitly grants Data API access to `anon` and `authenticated`, enab
 
 ## Existing Supabase Project Migration
 
-Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, `supabase/migrations/20260716120000_project_trash_retention.sql`, and `supabase/migrations/20260717221000_prompt_version_variable_schema.sql`.
+Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, `supabase/migrations/20260716120000_project_trash_retention.sql`, `supabase/migrations/20260717221000_prompt_version_variable_schema.sql`, and `supabase/migrations/20260719233000_evaluation_criteria_sort_order.sql`.
 
 The migration:
 
@@ -79,7 +79,7 @@ For a repository linked with the Supabase CLI, apply committed migrations with:
 npx supabase db push
 ```
 
-For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration, and the prompt-variable migration must follow Trash retention. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
+For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration, the prompt-variable migration must follow Trash retention, and the Evaluation Criteria ordering migration must run last. That final migration adds project-scoped `sort_order`, backfills existing criteria in their previous `created_at` order with `id` as a deterministic tie-breaker, and installs the atomic reorder function. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
 
 ## Project Trash Lifecycle
 

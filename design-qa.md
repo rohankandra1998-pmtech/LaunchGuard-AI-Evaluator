@@ -75,3 +75,86 @@
 - P3: the current LaunchGuard app shell differs from the conceptual navigation shown in the visual reference; this was intentionally left unchanged because the requested scope is the variable editor.
 
 final result: passed
+
+## Evaluation Criteria Persistent Ordering - July 19, 2026
+
+- Reference: `C:\Users\Rohan\AppData\Local\Temp\codex-clipboard-1c5c9620-0c4d-4535-abd9-0fc10159833a.png`
+- Desktop normal state: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-desktop-normal.png`
+- Desktop reorder state: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-desktop-reorder.png`
+- Desktop retryable save error: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-desktop-save-error.png`
+- Mobile reorder viewport: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\criteria-mobile-reorder-viewport.png`
+- Viewports: 1870 x 997 desktop and 390 x 844 mobile.
+
+**Findings**
+
+- The reference and implementation were inspected together at original detail. The implementation preserves the established compact rubric rows, lavender surfaces, semantic Good/Average/Bad columns, existing icon system, and action hierarchy; reorder mode adds only the controls and affordances needed for the new task.
+- Reorder mode clears the search and category filters, renders the complete rubric, hides row edit/overflow actions, disables create/suggestion actions, and presents explicit Cancel and Save order controls.
+- Desktop has no horizontal document overflow. At 390 px, the content region is 358 px wide, actions stack, criterion definitions stack, and drag handles remain isolated touch targets without forcing page overflow.
+- No actionable P0, P1, or P2 visual differences remain in the persistent-ordering scope.
+
+**Interaction and Accessibility QA**
+
+- Keyboard sorting was exercised with Space, Arrow Down, and Space; the criterion moved from position 1 to position 2 and the live region announced the resulting position.
+- Escape during an active keyboard drag restored the pre-drag draft and announced cancellation.
+- Pointer and touch sensors are scoped to the far-left handle. Touch activation uses a delay/tolerance constraint and `touch-action: none` only on the handle, preserving scrolling elsewhere.
+- Save is disabled until the draft changes. During save, Cancel, Save, and handles are disabled; a failed RPC keeps the draft in reorder mode, restores the controls, and exposes a retryable inline alert.
+- The missing-migration recovery state was verified first. The migration was then applied to Supabase project `nwabcbdcbjubfmoyszdz`; schema, constraints, index, grants, deterministic backfill, and migration history were verified. A caller-level RPC test executed successfully under the app's `anon` role and the saved rows remained ordered `0, 1, 2`.
+
+final result: passed
+
+## Evaluation Criteria Rubric Builder - July 19, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 19, 2026, 05_07_09 PM.png`
+- Desktop implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-desktop.png`
+- Desktop edit-drawer implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-edit-desktop.png`
+- Mobile implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-mobile.png`
+- Mobile drawer implementation: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-mobile-drawer.png`
+- Combined full-view comparison: `C:\Users\Rohan\.codex\visualizations\2026\07\20\019f7cda-6849-7293-904a-28ea3961a834\evaluation-criteria-comparison.png`
+- Viewports: 1680 x 944 desktop and 390 x 844 mobile.
+- State: saved criteria with the Clarity criterion selected in the Edit criterion drawer.
+
+**Findings**
+
+- No actionable P0, P1, or P2 findings remain.
+- Fonts and typography: the implementation retains LaunchGuard's existing font stack and weight scale while matching the reference's compact title, labels, badge, rubric-row, and drawer hierarchy. No visible copy is clipped at the tested viewports.
+- Spacing and layout rhythm: the desktop view uses a compact header, subdued information bar, dense full-width rubric rows, and a 576 px right drawer. Mobile stacks all rubric sections and uses a 390 px full-width sheet without horizontal page overflow.
+- Colors and visual tokens: all surfaces, borders, shadows, primary actions, and semantic Good/Average/Bad treatments use existing `guard-*` tokens. The dimmed drawer backdrop keeps the underlying selected row legible.
+- Image quality and asset fidelity: the reference contains no raster content that belongs in the product UI. Standard interface symbols use the existing Lucide library; no placeholder art or handcrafted SVG was introduced.
+- Copy and content: the page, callout, controls, empty states, drawers, rubric labels, and actions use the requested product copy while omitting unsupported statistics and reordering.
+- Accessibility and behavior: native dialogs expose labelled titles and descriptions, trap focus, focus the first create/edit field, restore focus to their trigger, close with Escape, lock body scrolling, and refuse close while an AI request or save is pending.
+
+**Browser QA**
+
+- Verified the page loads with saved criteria as the primary content.
+- Verified Add opens empty fields; a temporary criterion was created through the real server action and appeared in the list.
+- Verified Edit prefills every value; the temporary criterion was updated and the changed name appeared in the list.
+- Verified Cancel and Escape close without saving and restore trigger focus.
+- Verified search and category filters independently reduce the rendered criteria.
+- Verified delete is only in the overflow menu, requires confirmation, and removed the temporary QA criterion, restoring the original data.
+- Verified the AI drawer requests suggestions immediately. The live endpoint returned an empty set during QA; the resulting retryable empty state was corrected and individual acceptance remains wired through `saveCriterion`.
+- Verified 390 x 844 layout width equals the viewport, card content stacks vertically, and the full-width drawer retains sticky actions.
+- Browser console reported no warnings or errors.
+
+**Comparison History**
+
+- Initial interaction pass found a P2 focus mismatch: native dialog opening placed focus on Close instead of the first criterion field. The drawer shell now explicitly focuses its marked initial field after opening; the post-fix browser check reports `activeName: name`.
+- Initial AI edge-case pass found a P2 copy issue when the endpoint returned zero suggestions: it incorrectly displayed “All suggestions added.” The state now distinguishes accepted suggestions from an empty API result and offers Retry.
+- Post-fix side-by-side comparison confirms the requested lavender surface, row density, semantic definition columns, selected-row treatment, right drawer proportions, and action hierarchy. Differences from the reference are intentional: fake statistics, persistent ordering, and unsupported navigation elements are omitted.
+
+**Implementation Checklist**
+
+- [x] Compact saved-criteria workspace
+- [x] Search and existing-category filtering
+- [x] Responsive Good/Average/Bad rows
+- [x] Reusable accessible right-side drawer shell
+- [x] Create and edit criterion flows
+- [x] AI loading, error, retry, empty, and accept states
+- [x] Overflow delete with confirmation
+- [x] Empty and filtered-results states
+- [x] Desktop and mobile verification
+
+**Follow-up Polish**
+
+- P3: if the AI service frequently returns zero criteria in production, add server-side minimum-length validation to the structured response schema so that condition is surfaced as a generation error.
+
+final result: passed
