@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlertCircle, Check, ChevronDown, GripVertical, Info, Loader2, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { AlertCircle, Check, CircleDot, GripVertical, Info, Loader2, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { deleteCriterion, reorderCriteria, saveCriterion, saveSuggestedCriteria } from "@/app/actions";
 import { Badge, EmptyState, Select, TextArea, TextInput } from "@/components/ui";
 import { criterionFieldLimits, validateCriterion, type CriterionField, type CriterionValidationErrors, type SuggestedCriterionInput } from "@/lib/criteria";
@@ -29,7 +29,6 @@ type LocalSuggestion = {
   draft: SuggestedCriterion;
   editSnapshot: SuggestedCriterion | null;
   isEditing: boolean;
-  isExpanded: boolean;
   validationErrors: CriterionValidationErrors;
 };
 type ResultMessage = { tone: "status" | "error"; text: string };
@@ -112,7 +111,7 @@ function Definition({ tone, label, children, className = "" }: { tone: "good" | 
   return <div className={`min-w-0 border-t border-guard-line pt-4 lg:border-l lg:border-t-0 lg:px-4 lg:pt-0 ${className}`}><p className={`text-xs font-semibold ${color}`}>{label}</p><p className="mt-2 text-sm leading-5 text-guard-text">{children}</p></div>;
 }
 
-function SuggestionEditField({ suggestionId, field, label, required = false, value, error, disabled, multiline = false, onChange }: { suggestionId: string; field: CriterionField; label: string; required?: boolean; value: string; error?: string; disabled: boolean; multiline?: boolean; onChange: (value: string) => void }) {
+function SuggestionEditField({ suggestionId, field, label, required = false, value, error, disabled, multiline = false, labelClassName = "", onChange }: { suggestionId: string; field: CriterionField; label: string; required?: boolean; value: string; error?: string; disabled: boolean; multiline?: boolean; labelClassName?: string; onChange: (value: string) => void }) {
   const inputId = `${suggestionId}-${field}`;
   const errorId = `${inputId}-error`;
   const props = {
@@ -125,10 +124,10 @@ function SuggestionEditField({ suggestionId, field, label, required = false, val
     "aria-describedby": error ? errorId : undefined,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value)
   };
-  return <label className="grid gap-2 text-sm font-semibold text-guard-ink"><span>{label}{required ? <span className="ml-1 text-guard-red" aria-hidden="true">*</span> : null}</span>{multiline ? <TextArea {...props} className="min-h-24" /> : <TextInput {...props} />}{error ? <span id={errorId} className="text-xs font-medium text-guard-red">{error}</span> : null}</label>;
+  return <label className="grid gap-2 text-sm font-semibold text-guard-ink"><span className={labelClassName}>{label}{required ? <span className="ml-1 text-guard-red" aria-hidden="true">*</span> : null}</span>{multiline ? <TextArea {...props} className="min-h-24" /> : <TextInput {...props} />}{error ? <span id={errorId} className="text-xs font-medium text-guard-red">{error}</span> : null}</label>;
 }
 
-function SuggestionCard({ item, index, saving, actionsDisabled, onToggleExpanded, onEdit, onUpdate, onSaveEdit, onCancelEdit, onAccept }: { item: LocalSuggestion; index: number; saving: boolean; actionsDisabled: boolean; onToggleExpanded: () => void; onEdit: () => void; onUpdate: (field: CriterionField, value: string) => void; onSaveEdit: () => void; onCancelEdit: () => void; onAccept: () => void }) {
+function SuggestionCard({ item, index, saving, actionsDisabled, onEdit, onUpdate, onSaveEdit, onCancelEdit, onAccept }: { item: LocalSuggestion; index: number; saving: boolean; actionsDisabled: boolean; onEdit: () => void; onUpdate: (field: CriterionField, value: string) => void; onSaveEdit: () => void; onCancelEdit: () => void; onAccept: () => void }) {
   if (item.isEditing) {
     return (
       <article aria-busy={actionsDisabled} className="rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted p-4 sm:p-5">
@@ -137,12 +136,16 @@ function SuggestionCard({ item, index, saving, actionsDisabled, onToggleExpanded
           <div className="min-w-0 flex-1"><p className="truncate font-semibold text-guard-ink">{item.editSnapshot?.name || item.draft.name || "Suggested criterion"}</p><p className="mt-0.5 text-xs text-guard-muted">Edit the suggestion before adding it to your rubric.</p></div>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); onSaveEdit(); }} className="grid gap-4">
-          <SuggestionEditField suggestionId={item.id} field="name" label="Name" required value={item.draft.name} error={item.validationErrors.name} disabled={actionsDisabled} onChange={(value) => onUpdate("name", value)} />
-          <SuggestionEditField suggestionId={item.id} field="category" label="Category" value={item.draft.category} error={item.validationErrors.category} disabled={actionsDisabled} onChange={(value) => onUpdate("category", value)} />
+          <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <SuggestionEditField suggestionId={item.id} field="name" label="Name" required value={item.draft.name} error={item.validationErrors.name} disabled={actionsDisabled} onChange={(value) => onUpdate("name", value)} />
+            <SuggestionEditField suggestionId={item.id} field="category" label="Category" value={item.draft.category} error={item.validationErrors.category} disabled={actionsDisabled} onChange={(value) => onUpdate("category", value)} />
+          </div>
           <SuggestionEditField suggestionId={item.id} field="description" label="Description" required multiline value={item.draft.description} error={item.validationErrors.description} disabled={actionsDisabled} onChange={(value) => onUpdate("description", value)} />
-          <SuggestionEditField suggestionId={item.id} field="good_definition" label="Good definition" required multiline value={item.draft.good_definition} error={item.validationErrors.good_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("good_definition", value)} />
-          <SuggestionEditField suggestionId={item.id} field="average_definition" label="Average definition" required multiline value={item.draft.average_definition} error={item.validationErrors.average_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("average_definition", value)} />
-          <SuggestionEditField suggestionId={item.id} field="bad_definition" label="Bad definition" required multiline value={item.draft.bad_definition} error={item.validationErrors.bad_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("bad_definition", value)} />
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-green-200 bg-guard-greenSoft/40 p-3"><SuggestionEditField suggestionId={item.id} field="good_definition" label="Good definition" labelClassName="text-guard-green" required multiline value={item.draft.good_definition} error={item.validationErrors.good_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("good_definition", value)} /></div>
+            <div className="rounded-lg border border-amber-200 bg-guard-amberSoft/40 p-3"><SuggestionEditField suggestionId={item.id} field="average_definition" label="Average definition" labelClassName="text-guard-amber" required multiline value={item.draft.average_definition} error={item.validationErrors.average_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("average_definition", value)} /></div>
+            <div className="rounded-lg border border-red-200 bg-guard-redSoft/40 p-3"><SuggestionEditField suggestionId={item.id} field="bad_definition" label="Bad definition" labelClassName="text-guard-red" required multiline value={item.draft.bad_definition} error={item.validationErrors.bad_definition} disabled={actionsDisabled} onChange={(value) => onUpdate("bad_definition", value)} /></div>
+          </div>
           <div className="flex flex-col-reverse gap-2 min-[430px]:flex-row min-[430px]:justify-end"><button type="button" onClick={onCancelEdit} disabled={actionsDisabled} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold hover:bg-guard-surfaceMuted disabled:opacity-50">Cancel</button><button type="submit" disabled={actionsDisabled} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-3 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300"><Check aria-hidden="true" className="h-4 w-4" />Save changes</button></div>
         </form>
       </article>
@@ -150,21 +153,21 @@ function SuggestionCard({ item, index, saving, actionsDisabled, onToggleExpanded
   }
 
   return (
-    <article aria-busy={saving} className={`overflow-hidden rounded-xl border bg-white transition-colors ${item.isExpanded ? "border-guard-primaryLine" : "border-guard-line"}`}>
+    <article aria-busy={saving} className="overflow-hidden rounded-xl border border-guard-line bg-white">
       <div className="flex items-start gap-3 p-4 sm:p-5">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-guard-primarySoft text-sm font-semibold text-guard-primary">{index + 1}</span>
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words font-semibold text-guard-ink">{item.draft.name}</h3>{item.draft.category ? <Badge tone="primary">{item.draft.category}</Badge> : null}</div><p className={`mt-1.5 break-words text-sm leading-5 text-guard-muted ${item.isExpanded ? "" : "line-clamp-2"}`}>{item.draft.description}</p></div>
-        <div className="flex shrink-0 items-center gap-1.5"><button id={`edit-${item.id}`} type="button" onClick={onEdit} disabled={actionsDisabled} className="focus-ring inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-ink hover:bg-guard-surfaceMuted disabled:opacity-50"><Pencil aria-hidden="true" className="h-4 w-4" /><span className="hidden min-[430px]:inline">Edit</span></button><button type="button" onClick={onToggleExpanded} disabled={actionsDisabled} aria-expanded={item.isExpanded} aria-label={`${item.isExpanded ? "Collapse" : "Expand"} ${item.draft.name || "suggested criterion"}`} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg text-guard-muted hover:bg-guard-surfaceMuted hover:text-guard-ink disabled:opacity-50"><ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform ${item.isExpanded ? "rotate-180" : ""}`} /></button></div>
+        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words font-semibold text-guard-ink">{item.draft.name}</h3>{item.draft.category ? <Badge tone="primary">{item.draft.category}</Badge> : null}</div><p className="mt-1.5 break-words text-sm leading-5 text-guard-muted">{item.draft.description}</p></div>
+        <button id={`edit-${item.id}`} type="button" onClick={onEdit} disabled={actionsDisabled} aria-label={`Edit ${item.draft.name || "suggested criterion"}`} className="focus-ring inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-ink hover:bg-guard-surfaceMuted disabled:opacity-50"><Pencil aria-hidden="true" className="h-4 w-4" /><span className="hidden min-[430px]:inline">Edit</span></button>
       </div>
-      <dl className="grid border-t border-guard-line bg-guard-surfaceMuted sm:grid-cols-3 sm:divide-x sm:divide-guard-line"><div className="p-3.5 sm:p-4"><dt className="text-xs font-semibold text-guard-green">Good</dt><dd className={`mt-1.5 break-words text-sm leading-5 text-guard-text ${item.isExpanded ? "" : "line-clamp-3"}`}>{item.draft.good_definition}</dd></div><div className="border-t border-guard-line p-3.5 sm:border-t-0 sm:p-4"><dt className="text-xs font-semibold text-guard-amber">Average</dt><dd className={`mt-1.5 break-words text-sm leading-5 text-guard-text ${item.isExpanded ? "" : "line-clamp-3"}`}>{item.draft.average_definition}</dd></div><div className="border-t border-guard-line p-3.5 sm:border-t-0 sm:p-4"><dt className="text-xs font-semibold text-guard-red">Bad</dt><dd className={`mt-1.5 break-words text-sm leading-5 text-guard-text ${item.isExpanded ? "" : "line-clamp-3"}`}>{item.draft.bad_definition}</dd></div></dl>
-      {item.isExpanded ? <div className="flex justify-end border-t border-guard-line px-4 py-3"><button type="button" onClick={onAccept} disabled={actionsDisabled} aria-label={`Add ${item.draft.name || "suggested"} criterion`} className="focus-ring inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-60">{saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}{saving ? "Adding..." : "Add criterion"}</button></div> : null}
+      <dl className="grid gap-3 px-4 pb-4 sm:grid-cols-3 sm:px-5 sm:pb-5"><div className="rounded-lg border border-green-200 bg-guard-greenSoft p-3.5"><dt className="text-xs font-semibold text-guard-green">Good</dt><dd className="mt-1.5 break-words text-sm leading-5 text-guard-text">{item.draft.good_definition}</dd></div><div className="rounded-lg border border-amber-200 bg-guard-amberSoft p-3.5"><dt className="text-xs font-semibold text-guard-amber">Average</dt><dd className="mt-1.5 break-words text-sm leading-5 text-guard-text">{item.draft.average_definition}</dd></div><div className="rounded-lg border border-red-200 bg-guard-redSoft p-3.5"><dt className="text-xs font-semibold text-guard-red">Bad</dt><dd className="mt-1.5 break-words text-sm leading-5 text-guard-text">{item.draft.bad_definition}</dd></div></dl>
+      <div className="flex justify-end border-t border-guard-line px-4 py-3"><button type="button" onClick={onAccept} disabled={actionsDisabled} aria-label={`Add ${item.draft.name || "suggested"} criterion`} className="focus-ring inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-60">{saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}{saving ? "Adding..." : "Add criterion"}</button></div>
     </article>
   );
 }
 
 function localSuggestion(draft: SuggestedCriterion): LocalSuggestion {
   const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `suggestion-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return { id, draft: { ...draft }, editSnapshot: null, isEditing: false, isExpanded: false, validationErrors: validateCriterion(draft) };
+  return { id, draft: { ...draft }, editSnapshot: null, isEditing: false, validationErrors: validateCriterion(draft) };
 }
 
 function saveResultMessage(insertedCount: number, skippedCount: number, individual = false) {
@@ -176,7 +179,7 @@ function saveResultMessage(insertedCount: number, skippedCount: number, individu
 
 function SuggestionsSummary({ suggestionCount, savedCriteriaCount, hasActivePrompt }: { suggestionCount: number; savedCriteriaCount: number; hasActivePrompt: boolean }) {
   const chips = [
-    { label: "Gap-based", icon: Sparkles },
+    { label: "Gap-based", icon: CircleDot },
     { label: "Editable", icon: Pencil },
     { label: "No duplicates", icon: ShieldCheck }
   ];
@@ -245,11 +248,7 @@ function SuggestionsDrawer({ workspaceSlug, projectId, savedCriteriaCount, hasAc
 
   function beginEdit(id: string) {
     setResultMessage(null);
-    updateSuggestion(id, (item) => ({ ...item, editSnapshot: { ...item.draft }, isEditing: true, isExpanded: true, validationErrors: {} }));
-  }
-
-  function toggleExpanded(id: string) {
-    updateSuggestion(id, (item) => ({ ...item, isExpanded: !item.isExpanded }));
+    updateSuggestion(id, (item) => ({ ...item, editSnapshot: { ...item.draft }, isEditing: true, validationErrors: {} }));
   }
 
   function updateDraft(id: string, field: CriterionField, value: string) {
@@ -265,6 +264,7 @@ function SuggestionsDrawer({ workspaceSlug, projectId, savedCriteriaCount, hasAc
       return;
     }
     updateSuggestion(id, (current) => ({ ...current, editSnapshot: null, isEditing: false, validationErrors: {} }));
+    window.requestAnimationFrame(() => document.getElementById(`edit-${id}`)?.focus());
   }
 
   function cancelEdit(id: string) {
@@ -327,7 +327,7 @@ function SuggestionsDrawer({ workspaceSlug, projectId, savedCriteriaCount, hasAc
       {resultMessage ? <div role={resultMessage.tone === "error" ? "alert" : "status"} className={`mb-4 flex gap-2 rounded-lg border p-3 text-sm ${resultMessage.tone === "error" ? "border-red-200 bg-guard-redSoft text-guard-red" : "border-green-200 bg-guard-greenSoft text-guard-green"}`}>{resultMessage.tone === "error" ? <AlertCircle aria-hidden="true" className="h-4 w-4 shrink-0" /> : <Check aria-hidden="true" className="h-4 w-4 shrink-0" />}{resultMessage.text}</div> : null}
       {loading ? <div aria-label="Loading AI suggestions" aria-busy="true" className="grid gap-4">{[0, 1, 2].map((item) => <div key={item} className="animate-pulse rounded-xl border border-guard-line bg-guard-surfaceMuted p-5"><div className="h-4 w-2/5 rounded bg-guard-lineStrong" /><div className="mt-3 h-3 w-full rounded bg-guard-line" /><div className="mt-2 h-3 w-4/5 rounded bg-guard-line" /><div className="mt-5 h-16 rounded bg-white" /></div>)}</div>
       : generationError ? <div role="alert" className="rounded-xl border border-red-200 bg-guard-redSoft p-5 text-center"><AlertCircle aria-hidden="true" className="mx-auto h-6 w-6 text-guard-red" /><h3 className="mt-3 font-semibold text-guard-ink">Suggestions could not be loaded</h3><p className="mt-2 text-sm leading-6">{generationError}</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover">Retry</button></div>
-      : <div className="grid gap-4" aria-busy={saving}>{suggestions.length ? <><SuggestionsSummary suggestionCount={suggestions.length} savedCriteriaCount={savedCriteriaCount} hasActivePrompt={hasActivePrompt} />{suggestions.map((item, index) => <SuggestionCard key={item.id} item={item} index={index} saving={savingId === item.id} actionsDisabled={saving} onToggleExpanded={() => toggleExpanded(item.id)} onEdit={() => beginEdit(item.id)} onUpdate={(field, value) => updateDraft(item.id, field, value)} onSaveEdit={() => saveEdit(item.id)} onCancelEdit={() => cancelEdit(item.id)} onAccept={() => void accept(item.id)} />)}</> : completed ? <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Check aria-hidden="true" className="mx-auto h-6 w-6 text-guard-green" /><h3 className="mt-3 font-semibold text-guard-ink">All suggestions added</h3><p className="mt-2 text-sm text-guard-muted">All suggestions have been added or were already present in the rubric.</p></div> : <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Sparkles aria-hidden="true" className="mx-auto h-6 w-6 text-guard-primary" /><h3 className="mt-3 font-semibold text-guard-ink">Your rubric is well covered</h3><p className="mt-2 text-sm leading-6 text-guard-muted">No meaningful additional criteria were identified based on the active prompt and your saved criteria.</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Regenerate</button></div>}</div>}
+      : <div className="grid gap-4" aria-busy={saving}>{suggestions.length ? <><SuggestionsSummary suggestionCount={suggestions.length} savedCriteriaCount={savedCriteriaCount} hasActivePrompt={hasActivePrompt} />{suggestions.map((item, index) => <SuggestionCard key={item.id} item={item} index={index} saving={savingId === item.id} actionsDisabled={saving} onEdit={() => beginEdit(item.id)} onUpdate={(field, value) => updateDraft(item.id, field, value)} onSaveEdit={() => saveEdit(item.id)} onCancelEdit={() => cancelEdit(item.id)} onAccept={() => void accept(item.id)} />)}</> : completed ? <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Check aria-hidden="true" className="mx-auto h-6 w-6 text-guard-green" /><h3 className="mt-3 font-semibold text-guard-ink">All suggestions added</h3><p className="mt-2 text-sm text-guard-muted">All suggestions have been added or were already present in the rubric.</p></div> : <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center"><Sparkles aria-hidden="true" className="mx-auto h-6 w-6 text-guard-primary" /><h3 className="mt-3 font-semibold text-guard-ink">Your rubric is well covered</h3><p className="mt-2 text-sm leading-6 text-guard-muted">No meaningful additional criteria were identified based on the active prompt and your saved criteria.</p><button type="button" onClick={() => void loadSuggestions()} className="focus-ring mt-4 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Regenerate</button></div>}</div>}
     </DrawerShell>
   );
 }
