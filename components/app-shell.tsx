@@ -4,7 +4,7 @@ import { FolderKanban, PlusCircle, ShieldCheck } from "lucide-react";
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-guard-bg text-guard-text">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-guard-line bg-white p-5 lg:block">
+      <aside className="fixed inset-y-0 left-0 hidden w-48 border-r border-guard-line bg-white p-5 lg:block">
         <Link href="/" className="focus-ring flex items-center gap-3 rounded-lg text-lg font-semibold text-guard-ink">
           <span className="rounded-lg bg-guard-primarySoft p-2 text-guard-primary">
             <ShieldCheck className="h-5 w-5" />
@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/workspaces/new" aria-label="Create workspace" className="focus-ring rounded-md text-guard-primary"><PlusCircle className="h-5 w-5" /></Link>
         </nav>
       </header>
-      <main className="px-4 py-6 lg:ml-64 lg:px-8">{children}</main>
+      <main className="px-4 py-6 lg:ml-48 lg:px-8">{children}</main>
     </div>
   );
 }

@@ -32,18 +32,6 @@ function validateModel(value: string) {
   return value;
 }
 
-async function assertRelatedRecord(
-  table: string,
-  id: string,
-  projectId: string,
-  label: string
-) {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from(table).select("id").eq("id", assertUuid(id, `${label} ID`)).eq("project_id", projectId).maybeSingle();
-  if (error) throw error;
-  if (!data) throw new Error(`${label} does not belong to this project.`);
-}
-
 export async function createWorkspace(formData: FormData) {
   const supabase = await createClient();
   const name = formString(formData, "name");
@@ -388,7 +376,7 @@ export async function saveCriterion(formData: FormData) {
   }
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Criterion does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/dataset");
 }
 
 export async function saveSuggestedCriteria(
@@ -448,7 +436,7 @@ export async function saveSuggestedCriteria(
   const { error: insertError } = await supabase.from("evaluation_criteria").insert(rows);
   if (insertError) throw insertError;
 
-  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/dataset");
   return { insertedCount: rows.length, skippedNames };
 }
 
@@ -479,7 +467,7 @@ export async function reorderCriteria(workspaceSlug: string, projectId: string, 
     p_ordered_ids: validatedIds
   });
   if (error) throw new Error(`Criterion order could not be saved: ${error.message}`);
-  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/dataset");
 }
 
 export async function deleteCriterion(formData: FormData) {
@@ -490,7 +478,7 @@ export async function deleteCriterion(formData: FormData) {
   const { data, error } = await supabase.from("evaluation_criteria").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Criterion does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/dataset");
 }
 
 export async function saveTestCase(formData: FormData) {
@@ -505,17 +493,31 @@ export async function saveTestCase(formData: FormData) {
     user_input: formString(formData, "user_input"),
     case_type: caseType,
     variable_values: parseJsonObject(formString(formData, "variable_values") || "{}"),
-    expected_answer: formString(formData, "expected_answer") || null,
-    status: "draft"
+    status: "draft" as const
   };
   if (!payload.user_input) throw new Error("Test case input is required.");
 
-  const result = id
-    ? await supabase.from("test_cases").update(payload).eq("id", assertUuid(id, "Test case ID")).eq("project_id", projectId).select("id").maybeSingle()
-    : await supabase.from("test_cases").insert(payload).select("id").single();
+  const testCaseId = id ? assertUuid(id, "Test case ID") : null;
+  const result = testCaseId
+    ? await supabase
+        .from("test_cases")
+        .update({ ...payload, generated_ai_output: null, prompt_version_id: null, model_used: null })
+        .eq("id", testCaseId)
+        .eq("project_id", projectId)
+        .select("id")
+        .maybeSingle()
+    : await supabase.from("test_cases").insert({ ...payload, expected_answer: null }).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Test case does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
+  if (testCaseId) {
+    const { error: reviewError } = await supabase
+      .from("human_reviews")
+      .delete()
+      .eq("test_case_id", testCaseId)
+      .eq("project_id", projectId);
+    if (reviewError) throw reviewError;
+  }
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
 }
 
 export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, cases: Array<Record<string, unknown>>) {
@@ -556,15 +558,33 @@ export async function saveHumanReview(formData: FormData) {
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const testCaseId = assertUuid(formString(formData, "test_case_id"), "Test case ID");
-  await assertRelatedRecord("test_cases", testCaseId, projectId, "Test case");
+  const { data: testCase, error: testCaseLookupError } = await supabase
+    .from("test_cases")
+    .select("id, generated_ai_output, status")
+    .eq("id", testCaseId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (testCaseLookupError) throw testCaseLookupError;
+  if (!testCase) throw new Error("Test case does not belong to this project.");
+  if (!testCase.generated_ai_output || !["generated", "reviewed"].includes(testCase.status)) {
+    throw new Error("Run this test case before saving a review.");
+  }
 
   const ratingEntries = Array.from(formData.entries()).filter(([key]) => key.startsWith("rating_"));
   const criterionIds = ratingEntries.map(([key]) => assertUuid(key.replace("rating_", ""), "Criterion ID"));
-  const { data: criteria, error: criteriaError } = criterionIds.length
-    ? await supabase.from("evaluation_criteria").select("id").eq("project_id", projectId).in("id", criterionIds)
-    : { data: [], error: null };
+  if (new Set(criterionIds).size !== criterionIds.length) throw new Error("Each criterion can only be rated once.");
+  const { data: criteria, error: criteriaError } = await supabase
+    .from("evaluation_criteria")
+    .select("id")
+    .eq("project_id", projectId);
   if (criteriaError) throw criteriaError;
-  if ((criteria || []).length !== new Set(criterionIds).size) throw new Error("One or more ratings reference criteria outside this project.");
+  const savedCriterionIds = new Set((criteria || []).map((criterion) => criterion.id));
+  if (!savedCriterionIds.size) throw new Error("Add evaluation criteria before reviewing an output.");
+  if (criterionIds.length !== savedCriterionIds.size || criterionIds.some((id) => !savedCriterionIds.has(id))) {
+    throw new Error("Rate every saved evaluation criterion before marking this case as reviewed.");
+  }
+  const severity = formString(formData, "severity");
+  if (severity && !["Low", "Medium", "High"].includes(severity)) throw new Error("Unsupported review severity.");
 
   const { data: review, error: reviewError } = await supabase
     .from("human_reviews")
@@ -573,7 +593,7 @@ export async function saveHumanReview(formData: FormData) {
         project_id: projectId,
         test_case_id: testCaseId,
         failure_category: formString(formData, "failure_category") || null,
-        severity: formString(formData, "severity") || null,
+        severity: severity || null,
         human_notes: formString(formData, "human_notes") || null,
         reviewed_at: new Date().toISOString()
       },
@@ -602,7 +622,7 @@ export async function saveHumanReview(formData: FormData) {
 
   const { error: testCaseError } = await supabase.from("test_cases").update({ status: "reviewed" }).eq("id", testCaseId).eq("project_id", projectId);
   if (testCaseError) throw testCaseError;
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/review", "/results");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
 }
 
 export async function savePromptDraft(formData: FormData) {

@@ -1,180 +1,602 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { deleteTestCase, saveGeneratedTestCases, saveTestCase } from "@/app/actions";
-import { SubmitButton } from "@/components/submit-button";
-import { Badge, Card, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
-import type { EvaluationCriterion, Project, PromptVersion, TestCase } from "@/lib/types";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clipboard,
+  Database,
+  Info,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  X
+} from "lucide-react";
+import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase } from "@/app/actions";
+import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
+import { cn } from "@/lib/utils";
+import type {
+  EvaluationCriterion,
+  HumanReview,
+  HumanReviewRating,
+  Project,
+  PromptVariable,
+  PromptVersion,
+  RatingLabel,
+  TestCase,
+  TestCaseStatus
+} from "@/lib/types";
 
-const statusTone = { draft: "neutral", generated: "primary", reviewed: "good" } as const;
+const PAGE_SIZE = 10;
+const CASE_TYPES = ["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"] as const;
+const statusLabels: Record<TestCaseStatus, string> = {
+  draft: "Draft",
+  generated: "Ready to Review",
+  reviewed: "Reviewed"
+};
+const statusTones = { draft: "neutral", generated: "average", reviewed: "good" } as const;
+const typeTones: Record<string, "neutral" | "primary" | "average" | "bad" | "good"> = {
+  normal: "good",
+  edge: "primary",
+  ambiguous: "average",
+  missing_context: "neutral",
+  adversarial: "bad",
+  tone_sensitive: "primary"
+};
+
+type Toast = { tone: "success" | "error"; message: string } | null;
+type GeneratedSuggestion = Record<string, unknown>;
+
+function caseTypeLabel(value: string | null) {
+  return (value || "normal").split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function compactCaseId(id: string) {
+  return `TC-${id.replaceAll("-", "").slice(0, 6).toUpperCase()}`;
+}
+
+function initialVariableValues(schema: PromptVariable[], existing: TestCase | null) {
+  const values: Record<string, string | number | boolean | null> = { ...(existing?.variable_values || {}) };
+  for (const variable of schema) {
+    if (values[variable.key] === undefined) values[variable.key] = variable.default_value ?? "";
+  }
+  return values;
+}
 
 export function DatasetWorkspace({
   workspaceSlug,
   project,
   promptVersions,
   criteria,
-  testCases
+  testCases,
+  reviews,
+  ratings,
+  supportedModels
 }: {
   workspaceSlug: string;
   project: Project;
   promptVersions: PromptVersion[];
   criteria: EvaluationCriterion[];
   testCases: TestCase[];
+  reviews: HumanReview[];
+  ratings: HumanReviewRating[];
+  supportedModels: string[];
 }) {
   const router = useRouter();
-  const [selected, setSelected] = useState<string[]>([]);
+  const activePrompt = promptVersions.find((prompt) => prompt.is_active) || promptVersions[0];
+  const initialCase = testCases.find((testCase) => testCase.status === "generated") || testCases[0];
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedCaseId, setSelectedCaseId] = useState(initialCase?.id || "");
   const [status, setStatus] = useState("all");
-  const [promptVersion, setPromptVersion] = useState(promptVersions.find((p) => p.is_active)?.id || promptVersions[0]?.id || "");
-  const [model, setModel] = useState("gpt-4.1");
-  const [generated, setGenerated] = useState<Record<string, unknown>[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const activeVariableKeys = (promptVersions.find((prompt) => prompt.is_active) || promptVersions[0])?.variable_schema?.map((variable) => variable.key) || project.variables;
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [promptVersionId, setPromptVersionId] = useState(activePrompt?.id || "");
+  const [model, setModel] = useState(supportedModels[0] || activePrompt?.model_used || "");
+  const [busy, setBusy] = useState<"run" | "starter" | "save-starter" | "save-case" | "delete" | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [caseDialog, setCaseDialog] = useState<{ mode: "add" | "edit"; testCase: TestCase | null } | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<TestCase | null>(null);
+  const [generatedSuggestions, setGeneratedSuggestions] = useState<GeneratedSuggestion[]>([]);
+  const [starterOpen, setStarterOpen] = useState(false);
 
   const visibleCases = useMemo(() => {
-    return testCases.filter((testCase) => status === "all" || testCase.status === status);
-  }, [status, testCases]);
+    const query = search.trim().toLowerCase();
+    return testCases.filter((testCase) => {
+      const matchesStatus = status === "all" || testCase.status === status;
+      const matchesSearch = !query || testCase.user_input.toLowerCase().includes(query);
+      return matchesStatus && matchesSearch;
+    });
+  }, [search, status, testCases]);
 
-  function generateStarterSet() {
-    setError(null);
-    startTransition(async () => {
-      const res = await fetch("/api/ai/generate-test-cases", {
+  const pageCount = Math.max(1, Math.ceil(visibleCases.length / PAGE_SIZE));
+  const pageCases = visibleCases.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedCase = visibleCases.find((testCase) => testCase.id === selectedCaseId) || null;
+  const selectedIndex = selectedCase ? visibleCases.findIndex((testCase) => testCase.id === selectedCase.id) : -1;
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount));
+  }, [pageCount]);
+
+  useEffect(() => {
+    if (selectedCaseId && visibleCases.some((testCase) => testCase.id === selectedCaseId)) return;
+    const fallback = visibleCases.find((testCase) => testCase.status === "generated") || visibleCases[0];
+    setSelectedCaseId(fallback?.id || "");
+  }, [selectedCaseId, visibleCases]);
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => testCases.some((testCase) => testCase.id === id)));
+  }, [testCases]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  function changeStatus(nextStatus: string) {
+    setStatus(nextStatus);
+    setPage(1);
+  }
+
+  function changeSearch(nextSearch: string) {
+    setSearch(nextSearch);
+    setPage(1);
+  }
+
+  async function runCases(ids: string[]) {
+    if (!ids.length || !promptVersionId || !model) return;
+    setBusy("run");
+    setToast(null);
+    try {
+      const response = await fetch("/api/ai/generate-output", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_slug: workspaceSlug,
+          project_id: project.id,
+          test_case_ids: ids,
+          prompt_version_id: promptVersionId,
+          model
+        })
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not run AI outputs.");
+      setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
+      setSelectedCaseId(ids[0]);
+      setToast({ tone: "success", message: ids.length === 1 ? "AI output generated. This case is ready to review." : `${ids.length} AI outputs generated and ready to review.` });
+      router.refresh();
+    } catch (error) {
+      setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not run AI outputs." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function generateStarterSet() {
+    setBusy("starter");
+    setToast(null);
+    try {
+      const response = await fetch("/api/ai/generate-test-cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id })
       });
-      const json = await res.json();
-      if (!res.ok) setError(json.error || "Could not generate starter test cases.");
-      else setGenerated(json.test_cases);
-    });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not generate a starter set.");
+      setGeneratedSuggestions(json.test_cases || []);
+      setStarterOpen(true);
+    } catch (error) {
+      setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not generate a starter set." });
+    } finally {
+      setBusy(null);
+    }
   }
 
-  function runOutputs() {
-    setError(null);
-    startTransition(async () => {
-      const ids = selected.length ? selected : visibleCases.map((testCase) => testCase.id);
-      const res = await fetch("/api/ai/generate-output", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id, test_case_ids: ids, prompt_version_id: promptVersion, model })
-      });
-      const json = await res.json();
-      if (!res.ok) setError(json.error || "Could not run AI outputs.");
-      else {
-        setSelected([]);
-        router.refresh();
-      }
-    });
+  async function saveStarterSet() {
+    setBusy("save-starter");
+    try {
+      await saveGeneratedTestCases(workspaceSlug, project.id, generatedSuggestions);
+      setStarterOpen(false);
+      setGeneratedSuggestions([]);
+      setToast({ tone: "success", message: `${generatedSuggestions.length} generated test cases added to Golden Dataset.` });
+      router.refresh();
+    } catch (error) {
+      setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not save generated cases." });
+    } finally {
+      setBusy(null);
+    }
   }
 
-  async function saveSuggestions() {
-    await saveGeneratedTestCases(workspaceSlug, project.id, generated);
-    setGenerated([]);
-    router.refresh();
+  async function submitCase(formData: FormData) {
+    setBusy("save-case");
+    try {
+      await saveTestCase(formData);
+      const mode = caseDialog?.mode;
+      setCaseDialog(null);
+      setToast({ tone: "success", message: mode === "edit" ? "Test case updated. Generate a fresh output before reviewing." : "Test case added to the queue." });
+      router.refresh();
+    } catch (error) {
+      setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not save the test case." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteDialog) return;
+    setBusy("delete");
+    const formData = new FormData();
+    formData.set("id", deleteDialog.id);
+    formData.set("project_id", project.id);
+    formData.set("workspace_slug", workspaceSlug);
+    try {
+      await deleteTestCase(formData);
+      setDeleteDialog(null);
+      setToast({ tone: "success", message: "Test case deleted." });
+      router.refresh();
+    } catch (error) {
+      setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not delete the test case." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const reviewedCount = testCases.filter((testCase) => testCase.status === "reviewed").length;
+  const readyCount = testCases.filter((testCase) => testCase.status === "generated").length;
+
+  return (
+    <div className="pb-8">
+      <div className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight text-guard-ink">Golden Dataset</h1>
+          <p className="mt-2 text-sm leading-6 text-guard-muted">Create, run, and review test cases in one workflow.</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2.5">
+          <div className="min-w-36">
+            <span className="mb-1 block text-xs font-medium text-guard-muted">Status</span>
+            <Select aria-label="Filter test cases by status" value={status} onChange={(event) => changeStatus(event.target.value)}>
+              <option value="all">All ({testCases.length})</option>
+              <option value="draft">Draft</option>
+              <option value="generated">Ready to Review</option>
+              <option value="reviewed">Reviewed</option>
+            </Select>
+          </div>
+          <div className="min-w-44">
+            <span className="mb-1 block text-xs font-medium text-guard-muted">Prompt Version</span>
+            <Select aria-label="Prompt version" value={promptVersionId} onChange={(event) => setPromptVersionId(event.target.value)}>
+              {promptVersions.map((prompt) => <option key={prompt.id} value={prompt.id}>v{prompt.version_number}{prompt.is_active ? " (Active)" : ""}</option>)}
+            </Select>
+          </div>
+          <div className="min-w-36">
+            <span className="mb-1 block text-xs font-medium text-guard-muted">Model</span>
+            <Select aria-label="AI model" value={model} onChange={(event) => setModel(event.target.value)}>
+              {supportedModels.map((supportedModel) => <option key={supportedModel} value={supportedModel}>{supportedModel}</option>)}
+            </Select>
+          </div>
+          <button type="button" onClick={generateStarterSet} disabled={busy !== null || !activePrompt} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3.5 text-sm font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:border-guard-line disabled:text-slate-400">
+            {busy === "starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate Starter Set
+          </button>
+          <button type="button" onClick={() => runCases(selectedIds)} disabled={busy !== null || !selectedIds.length || !promptVersionId || !model} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-guard-primary px-4 text-sm font-semibold text-white transition hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">
+            {busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Run Selected{selectedIds.length ? ` (${selectedIds.length})` : ""}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.7fr)]">
+        <section aria-labelledby="queue-title" className="overflow-hidden rounded-xl border border-guard-line bg-white shadow-card">
+          <div className="border-b border-guard-line px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <h2 id="queue-title" className="font-semibold text-guard-ink">Test Case Queue</h2>
+                <Badge tone="primary">{testCases.length}</Badge>
+              </div>
+              <button type="button" onClick={() => setCaseDialog({ mode: "add", testCase: null })} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-guard-primaryLine bg-white px-2.5 py-1.5 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft"><Plus className="h-3.5 w-3.5" /> Add</button>
+            </div>
+            <p className="mt-2 text-xs text-guard-muted"><span className="font-semibold text-guard-amber">{readyCount}</span> ready · <span className="font-semibold text-guard-green">{reviewedCount}</span> reviewed</p>
+            <div className="relative mt-4">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-guard-muted" />
+              <TextInput aria-label="Search test cases" value={search} onChange={(event) => changeSearch(event.target.value)} placeholder="Search test cases..." className="pl-9" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[1.4rem_minmax(0,1fr)_auto_4.5rem] items-center gap-2 border-b border-guard-line bg-guard-surfaceMuted/60 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-guard-muted">
+            <input
+              aria-label="Select all test cases on this page"
+              type="checkbox"
+              checked={pageCases.length > 0 && pageCases.every((testCase) => selectedIds.includes(testCase.id))}
+              onChange={(event) => {
+                const pageIds = pageCases.map((testCase) => testCase.id);
+                setSelectedIds((current) => event.target.checked ? [...new Set([...current, ...pageIds])] : current.filter((id) => !pageIds.includes(id)));
+              }}
+              className="h-4 w-4 rounded border-guard-lineStrong accent-guard-primary"
+            />
+            <span>User Input</span><span>Status</span><span className="text-right">Actions</span>
+          </div>
+
+          {pageCases.length ? (
+            <div>
+              {pageCases.map((testCase) => (
+                <div key={testCase.id} className={cn("grid grid-cols-[1.4rem_minmax(0,1fr)_auto_4.5rem] items-center gap-2 border-b border-guard-line px-4 py-3 transition", selectedCase?.id === testCase.id ? "bg-guard-primarySoft" : "bg-white hover:bg-guard-surfaceMuted/70")}>
+                  <input
+                    aria-label={`Select ${compactCaseId(testCase.id)} to run`}
+                    type="checkbox"
+                    checked={selectedIds.includes(testCase.id)}
+                    onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, testCase.id] : current.filter((id) => id !== testCase.id))}
+                    className="h-4 w-4 rounded border-guard-lineStrong accent-guard-primary"
+                  />
+                  <button type="button" onClick={() => setSelectedCaseId(testCase.id)} className="focus-ring min-w-0 rounded-md text-left">
+                    <span className="line-clamp-2 text-sm leading-5 text-guard-ink">{testCase.user_input}</span>
+                    <span className="mt-1 block text-[11px] text-guard-muted">{compactCaseId(testCase.id)} · {caseTypeLabel(testCase.case_type)}</span>
+                  </button>
+                  <Badge tone={statusTones[testCase.status]}>{statusLabels[testCase.status]}</Badge>
+                  <div className="flex justify-end gap-1">
+                    <button type="button" onClick={() => setCaseDialog({ mode: "edit", testCase })} aria-label={`Edit ${compactCaseId(testCase.id)}`} className="focus-ring rounded-md p-2 text-guard-muted transition hover:bg-white hover:text-guard-primary"><Pencil className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => setDeleteDialog(testCase)} aria-label={`Delete ${compactCaseId(testCase.id)}`} className="focus-ring rounded-md p-2 text-guard-muted transition hover:bg-guard-redSoft hover:text-guard-red"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-5"><EmptyState title={testCases.length ? "No matching test cases" : "No test cases yet"}>{testCases.length ? "Adjust the status filter or search query." : "Add a test case manually or generate a starter set."}</EmptyState></div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 px-4 py-3 text-xs text-guard-muted">
+            <span>{visibleCases.length ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, visibleCases.length)} of ${visibleCases.length}` : "0 cases"}</span>
+            <div className="flex items-center gap-1">
+              <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="focus-ring rounded-md p-2 hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
+              <span className="rounded-md bg-guard-primarySoft px-2.5 py-1 font-semibold text-guard-primaryHover">{page}</span>
+              <span>of {pageCount}</span>
+              <button type="button" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => current + 1)} className="focus-ring rounded-md p-2 hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
+            </div>
+          </div>
+        </section>
+
+        <ReviewPanel
+          workspaceSlug={workspaceSlug}
+          projectId={project.id}
+          selected={selectedCase}
+          criteria={criteria}
+          reviews={reviews}
+          ratings={ratings}
+          promptVersions={promptVersions}
+          busy={busy}
+          onRun={(id) => runCases([id])}
+          onSaved={() => {
+            setToast({ tone: "success", message: selectedCase?.status === "reviewed" ? "Review updated." : "Case marked as reviewed." });
+            router.refresh();
+          }}
+          onError={(message) => setToast({ tone: "error", message })}
+          onPrevious={selectedIndex > 0 ? () => setSelectedCaseId(visibleCases[selectedIndex - 1].id) : undefined}
+          onNext={selectedIndex >= 0 && selectedIndex < visibleCases.length - 1 ? () => setSelectedCaseId(visibleCases[selectedIndex + 1].id) : undefined}
+        />
+      </div>
+
+      {caseDialog ? (
+        <CaseEditorDialog
+          mode={caseDialog.mode}
+          testCase={caseDialog.testCase}
+          projectId={project.id}
+          workspaceSlug={workspaceSlug}
+          prompt={promptVersions.find((prompt) => prompt.id === promptVersionId) || activePrompt}
+          pending={busy === "save-case"}
+          onClose={() => setCaseDialog(null)}
+          onSubmit={submitCase}
+        />
+      ) : null}
+
+      {deleteDialog ? (
+        <Modal title="Delete test case?" description="This removes the test case, its current review, and its generated-output history. This action cannot be undone." onClose={() => setDeleteDialog(null)}>
+          <div className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-4 text-sm leading-6 text-guard-ink">{deleteDialog.user_input}</div>
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" onClick={() => setDeleteDialog(null)} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">Cancel</button>
+            <button type="button" onClick={confirmDelete} disabled={busy === "delete"} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-red px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">{busy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete test case</button>
+          </div>
+        </Modal>
+      ) : null}
+
+      {starterOpen ? (
+        <Modal title="Review starter set" description="Review the AI-generated cases before adding them to Golden Dataset. Nothing is saved until you confirm." onClose={() => setStarterOpen(false)} wide>
+          <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+            {generatedSuggestions.map((suggestion, index) => (
+              <div key={index} className="flex items-start gap-3 rounded-xl border border-guard-line bg-guard-surfaceMuted p-4">
+                <div className="min-w-0 flex-1"><Badge tone={typeTones[String(suggestion.case_type || "normal")] || "neutral"}>{caseTypeLabel(String(suggestion.case_type || "normal"))}</Badge><p className="mt-2 text-sm leading-6 text-guard-ink">{String(suggestion.user_input || "")}</p></div>
+                <button type="button" onClick={() => setGeneratedSuggestions((current) => current.filter((_, suggestionIndex) => suggestionIndex !== index))} aria-label={`Remove generated case ${index + 1}`} className="focus-ring rounded-md p-2 text-guard-muted hover:bg-white hover:text-guard-red"><X className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-guard-line pt-5">
+            <p className="text-sm text-guard-muted">{generatedSuggestions.length} cases selected</p>
+            <div className="flex gap-3"><button type="button" onClick={() => setStarterOpen(false)} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">Cancel</button><button type="button" onClick={saveStarterSet} disabled={!generatedSuggestions.length || busy === "save-starter"} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">{busy === "save-starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Save to Golden Dataset</button></div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {toast ? (
+        <div role={toast.tone === "error" ? "alert" : "status"} aria-live="polite" className={cn("fixed bottom-5 right-5 z-50 flex max-w-md items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-floating", toast.tone === "success" ? "border-green-200 text-guard-green" : "border-red-200 text-guard-red")}>
+          {toast.tone === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}<span>{toast.message}</span><button type="button" onClick={() => setToast(null)} aria-label="Dismiss message" className="focus-ring ml-1 rounded p-0.5"><X className="h-4 w-4" /></button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReviewPanel({
+  workspaceSlug,
+  projectId,
+  selected,
+  criteria,
+  reviews,
+  ratings,
+  promptVersions,
+  busy,
+  onRun,
+  onSaved,
+  onError,
+  onPrevious,
+  onNext
+}: {
+  workspaceSlug: string;
+  projectId: string;
+  selected: TestCase | null;
+  criteria: EvaluationCriterion[];
+  reviews: HumanReview[];
+  ratings: HumanReviewRating[];
+  promptVersions: PromptVersion[];
+  busy: string | null;
+  onRun: (id: string) => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
+}) {
+  if (!selected) {
+    return <section aria-labelledby="review-title" className="rounded-xl border border-guard-line bg-white p-5 shadow-card"><h2 id="review-title" className="font-semibold text-guard-ink">Review Panel</h2><div className="mt-5"><EmptyState title="No test case selected">Choose a visible test case from the queue to inspect and review it.</EmptyState></div></section>;
+  }
+
+  const review = reviews.find((candidate) => candidate.test_case_id === selected.id);
+  const reviewRatings = ratings.filter((rating) => rating.review_id === review?.id);
+  const prompt = promptVersions.find((candidate) => candidate.id === selected.prompt_version_id);
+  const hasOutput = Boolean(selected.generated_ai_output) && selected.status !== "draft";
+
+  return (
+    <section aria-labelledby="review-title" className="overflow-hidden rounded-xl border border-guard-line bg-white shadow-card">
+      <div className="flex items-center justify-between gap-3 border-b border-guard-line px-5 py-4">
+        <h2 id="review-title" className="font-semibold text-guard-ink">Review Panel</h2>
+        <div className="flex items-center gap-2 text-xs text-guard-muted"><span>Case ID: <strong className="font-semibold text-guard-text">{compactCaseId(selected.id)}</strong></span><button type="button" aria-label="Previous test case" onClick={onPrevious} disabled={!onPrevious} className="focus-ring rounded-md p-1.5 hover:bg-guard-primarySoft disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button><button type="button" aria-label="Next test case" onClick={onNext} disabled={!onNext} className="focus-ring rounded-md p-1.5 hover:bg-guard-primarySoft disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button></div>
+      </div>
+
+      <div className="space-y-5 p-5">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-guard-ink">User Input</h3><CopyIconButton text={selected.user_input} label="Copy user input" /></div>
+          <div className="rounded-xl border border-guard-primaryLine/70 bg-guard-surfaceMuted px-4 py-3 text-sm leading-6 text-guard-ink">{selected.user_input}</div>
+        </div>
+
+        {hasOutput ? (
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-guard-ink">AI Output</h3><Badge tone="neutral">{selected.model_used || "Model unknown"}</Badge><Badge tone="primary">{prompt ? `v${prompt.version_number}` : "Prompt unknown"}</Badge><span className="text-xs font-medium text-guard-green">{selected.status === "reviewed" ? "Reviewed" : "Output ready"}</span></div>
+              <CopyIconButton text={selected.generated_ai_output || ""} label="Copy AI output" />
+            </div>
+            <div className="whitespace-pre-wrap rounded-xl border border-green-100 bg-green-50/60 px-4 py-4 text-sm leading-7 text-guard-ink">{selected.generated_ai_output}</div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-7 text-center">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-guard-primary shadow-card"><Database className="h-5 w-5" /></div>
+            <h3 className="mt-3 font-semibold text-guard-ink">No output yet</h3><p className="mt-1 text-sm text-guard-muted">Run this case to generate an output before reviewing.</p>
+            <button type="button" onClick={() => onRun(selected.id)} disabled={busy !== null} className="focus-ring mt-4 inline-flex items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">{busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Run this case</button>
+          </div>
+        )}
+
+        {hasOutput ? (
+          criteria.length ? (
+            <ReviewForm key={`${selected.id}-${review?.reviewed_at || "new"}`} workspaceSlug={workspaceSlug} projectId={projectId} testCase={selected} criteria={criteria} review={review} savedRatings={reviewRatings} onSaved={onSaved} onError={onError} />
+          ) : (
+            <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-7 text-center"><Info className="mx-auto h-6 w-6 text-guard-primary" /><h3 className="mt-3 font-semibold text-guard-ink">No evaluation criteria</h3><p className="mt-1 text-sm text-guard-muted">Add criteria before this output can be reviewed.</p><Link href={`/workspaces/${workspaceSlug}/projects/${projectId}/criteria`} className="focus-ring mt-4 inline-flex rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Go to Evaluation Criteria</Link></div>
+          )
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border border-guard-line bg-guard-surfaceMuted px-4 py-3 text-sm text-guard-muted"><Info className="h-4 w-4 shrink-0" /> Review controls unlock after a valid AI output is generated.</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, savedRatings, onSaved, onError }: { workspaceSlug: string; projectId: string; testCase: TestCase; criteria: EvaluationCriterion[]; review?: HumanReview; savedRatings: HumanReviewRating[]; onSaved: () => void; onError: (message: string) => void }) {
+  const [pending, setPending] = useState(false);
+  const [selectedRatings, setSelectedRatings] = useState<Record<string, RatingLabel>>(Object.fromEntries(savedRatings.map((rating) => [rating.criterion_id, rating.rating_label])));
+  const complete = criteria.every((criterion) => selectedRatings[criterion.id]);
+
+  async function submit(formData: FormData) {
+    setPending(true);
+    try {
+      await saveHumanReview(formData);
+      onSaved();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not save this review.");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-          <form action={saveTestCase} className="grid gap-4">
-            <input type="hidden" name="project_id" value={project.id} />
-            <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-            <h2 className="text-lg font-semibold text-guard-ink">Add test case</h2>
-            <div><Label>User input / question</Label><TextArea required name="user_input" /></div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div><Label>Case type</Label><Select name="case_type"><option value="normal">normal</option><option value="edge">edge</option><option value="ambiguous">ambiguous</option><option value="missing_context">missing_context</option><option value="adversarial">adversarial</option><option value="tone_sensitive">tone_sensitive</option></Select></div>
-              <div><Label>Expected answer</Label><TextInput name="expected_answer" /></div>
+    <form action={submit} className="space-y-5">
+      <input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="test_case_id" value={testCase.id} />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {criteria.map((criterion) => (
+          <fieldset key={criterion.id} className="min-w-0 rounded-xl border border-guard-line bg-white p-4">
+            <div className="flex items-start justify-between gap-2"><div><legend className="text-sm font-semibold text-guard-ink">{criterion.name}</legend><p className="mt-1 line-clamp-2 text-xs leading-5 text-guard-muted">{criterion.description}</p></div><details className="relative shrink-0"><summary aria-label={`Show rating definitions for ${criterion.name}`} className="focus-ring cursor-pointer list-none rounded-md p-1 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary"><Info className="h-4 w-4" /></summary><div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-guard-line bg-white p-4 text-xs leading-5 text-guard-text shadow-floating"><p><strong className="text-guard-green">Good:</strong> {criterion.good_definition}</p><p className="mt-2"><strong className="text-guard-amber">Average:</strong> {criterion.average_definition}</p><p className="mt-2"><strong className="text-guard-red">Bad:</strong> {criterion.bad_definition}</p></div></details></div>
+            <div className="mt-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label={`${criterion.name} rating`}>
+              {(["Good", "Average", "Bad"] as const).map((rating) => {
+                const styles = rating === "Good" ? "border-green-200 text-guard-green peer-checked:border-guard-green peer-checked:bg-guard-greenSoft" : rating === "Average" ? "border-amber-200 text-guard-amber peer-checked:border-guard-amber peer-checked:bg-guard-amberSoft" : "border-red-200 text-guard-red peer-checked:border-guard-red peer-checked:bg-guard-redSoft";
+                return <label key={rating} className="cursor-pointer"><input className="peer sr-only" required type="radio" name={`rating_${criterion.id}`} value={rating} checked={selectedRatings[criterion.id] === rating} onChange={() => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} /><span className={cn("focus-ring flex min-h-9 items-center justify-center rounded-lg border bg-white px-2 text-xs font-semibold transition hover:brightness-95", styles)}>{rating}</span></label>;
+              })}
             </div>
-            <div><Label>Variable values JSON</Label><TextArea name="variable_values" defaultValue={JSON.stringify(Object.fromEntries(activeVariableKeys.map((key) => [key, ""])), null, 2)} className="font-mono" /></div>
-            <SubmitButton>Add test case</SubmitButton>
-          </form>
-          <div>
-            <h2 className="text-lg font-semibold text-guard-ink">Generate Starter Test Set</h2>
-            <p className="mt-2 text-sm text-guard-muted">GPT-5 creates normal, edge, ambiguous, missing-context, adversarial, and tone-sensitive cases.</p>
-            <button onClick={generateStarterSet} disabled={pending || !criteria.length} className="focus-ring mt-4 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
-              {pending ? "Generating..." : "Generate Starter Test Set"}
-            </button>
-            {error ? <p className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{error}</p> : null}
-            {generated.length ? (
-              <div className="mt-4 space-y-3">
-                {generated.map((item, index) => (
-                  <div key={index} className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-3 text-sm text-guard-text">
-                    <Badge>{String(item.case_type)}</Badge>
-                    <p className="mt-2">{String(item.user_input)}</p>
-                  </div>
-                ))}
-                <button onClick={saveSuggestions} className="focus-ring rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Save generated cases</button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </Card>
+          </fieldset>
+        ))}
+      </div>
 
-      <Card>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-guard-ink">Golden Dataset</h2>
-            <p className="mt-1 text-sm text-slate-400">Select cases, choose a prompt version, and run GPT outputs.</p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="all">All statuses</option><option value="draft">Draft</option><option value="generated">Generated</option><option value="reviewed">Reviewed</option>
-            </Select>
-            <Select value={promptVersion} onChange={(event) => setPromptVersion(event.target.value)}>
-              {promptVersions.map((prompt) => <option key={prompt.id} value={prompt.id}>v{prompt.version_number}{prompt.is_active ? " active" : ""}</option>)}
-            </Select>
-            <Select value={model} onChange={(event) => setModel(event.target.value)}>
-              <option value="gpt-4.1">gpt-4.1</option><option value="gpt-5">gpt-5</option>
-            </Select>
-            <button onClick={runOutputs} disabled={pending || !visibleCases.length || !promptVersion} className="focus-ring rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
-              {pending ? "Running..." : "Run AI Outputs"}
-            </button>
-          </div>
-        </div>
-        <div className="mt-5 overflow-x-auto">
-          {visibleCases.length ? (
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400"><tr><th className="p-3">Select</th><th className="p-3">Input</th><th className="p-3">Status</th><th className="p-3">Case</th><th className="p-3">Output</th><th className="p-3">Actions</th></tr></thead>
-              <tbody>
-                {visibleCases.map((testCase) => (
-                  <tr key={testCase.id} className="border-t border-guard-line transition hover:bg-guard-surfaceMuted">
-                    <td className="p-3"><input type="checkbox" checked={selected.includes(testCase.id)} onChange={(event) => setSelected((cur) => event.target.checked ? [...cur, testCase.id] : cur.filter((id) => id !== testCase.id))} /></td>
-                    <td className="max-w-md p-3 text-guard-text">{testCase.user_input}</td>
-                    <td className="p-3"><Badge tone={statusTone[testCase.status]}>{testCase.status}</Badge></td>
-                    <td className="p-3 text-guard-muted">{testCase.case_type}</td>
-                    <td className="max-w-sm truncate p-3 text-slate-400">{testCase.generated_ai_output || "Not generated"}</td>
-                    <td className="p-3">
-                      <div className="flex items-start gap-2">
-                        <details>
-                          <summary className="cursor-pointer rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft">Edit</summary>
-                          <form action={saveTestCase} className="mt-3 grid w-80 gap-3 rounded-xl border border-guard-line bg-white p-4 shadow-floating">
-                            <input type="hidden" name="id" value={testCase.id} />
-                            <input type="hidden" name="project_id" value={project.id} />
-                            <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-                            <div><Label>User input</Label><TextArea required name="user_input" defaultValue={testCase.user_input} /></div>
-                            <div><Label>Case type</Label><Select name="case_type" defaultValue={testCase.case_type || "normal"}><option value="normal">normal</option><option value="edge">edge</option><option value="ambiguous">ambiguous</option><option value="missing_context">missing_context</option><option value="adversarial">adversarial</option><option value="tone_sensitive">tone_sensitive</option></Select></div>
-                            <div><Label>Expected answer</Label><TextArea name="expected_answer" defaultValue={testCase.expected_answer || ""} /></div>
-                            <div><Label>Variable values JSON</Label><TextArea name="variable_values" defaultValue={JSON.stringify(testCase.variable_values, null, 2)} className="font-mono" /></div>
-                            <SubmitButton pendingText="Updating case...">Update test case</SubmitButton>
-                          </form>
-                        </details>
-                        <form action={deleteTestCase}>
-                          <input type="hidden" name="id" value={testCase.id} />
-                          <input type="hidden" name="project_id" value={project.id} />
-                          <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-                          <SubmitButton confirmMessage="Delete this test case and its generated output history?" className="bg-guard-red/15 text-guard-red hover:bg-guard-red/25" pendingText="Deleting...">Delete</SubmitButton>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <EmptyState title="No test cases">Add a case manually or generate a starter test set.</EmptyState>}
-        </div>
-      </Card>
-    </div>
+      <div className="grid gap-4 border-t border-guard-line pt-5 md:grid-cols-[1fr_0.65fr_1.5fr]">
+        <div><Label>Failure Category</Label><TextInput name="failure_category" defaultValue={review?.failure_category || ""} placeholder="Hallucination, policy miss, tone, refusal" className="mt-2" /></div>
+        <div><Label>Severity</Label><Select name="severity" defaultValue={review?.severity || ""} className="mt-2"><option value="">None</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></Select></div>
+        <div><Label>Human Notes</Label><TextArea name="human_notes" defaultValue={review?.human_notes || ""} placeholder="Add context about what worked, what failed, and why it matters." maxLength={1000} className="mt-2 min-h-20" /></div>
+      </div>
+      <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-guard-line bg-guard-surfaceMuted px-4 py-3 shadow-card"><p className="text-xs text-guard-muted">{complete ? "All criteria rated. Ready to save." : `Rate all ${criteria.length} criteria to continue.`}</p><button type="submit" disabled={!complete || pending} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{pending ? "Saving review..." : review ? "Update Review" : "Mark as Reviewed"}</button></div>
+    </form>
   );
+}
+
+function CaseEditorDialog({ mode, testCase, projectId, workspaceSlug, prompt, pending, onClose, onSubmit }: { mode: "add" | "edit"; testCase: TestCase | null; projectId: string; workspaceSlug: string; prompt?: PromptVersion; pending: boolean; onClose: () => void; onSubmit: (formData: FormData) => void }) {
+  const schema = prompt?.variable_schema || [];
+  const [variableValues, setVariableValues] = useState(() => initialVariableValues(schema, testCase));
+
+  return (
+    <Modal title={mode === "edit" ? "Edit test case" : "Add test case"} description={mode === "edit" ? "Updating the case invalidates its current output and review so the next rating always matches fresh content." : "Add a focused input to the Golden Dataset queue."} onClose={onClose} wide>
+      <form action={(formData) => { formData.set("variable_values", JSON.stringify(variableValues)); onSubmit(formData); }} className="space-y-5">
+        <input type="hidden" name="id" value={testCase?.id || ""} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="workspace_slug" value={workspaceSlug} />
+        <div><Label>User Input</Label><TextArea autoFocus required name="user_input" defaultValue={testCase?.user_input || ""} placeholder="Enter the message or scenario to evaluate." className="mt-2 min-h-32" /></div>
+        <div><Label>Case Type</Label><Select name="case_type" defaultValue={testCase?.case_type || "normal"} className="mt-2">{CASE_TYPES.map((caseType) => <option key={caseType} value={caseType}>{caseTypeLabel(caseType)}</option>)}</Select></div>
+        {schema.length ? (
+          <fieldset className="rounded-xl border border-guard-line bg-guard-surfaceMuted p-4"><legend className="px-1 text-sm font-semibold text-guard-ink">Prompt Variables · {prompt ? `v${prompt.version_number}` : "Selected version"}</legend><p className="mb-4 mt-1 text-xs leading-5 text-guard-muted">Values are stored with this case and inserted into the selected prompt when it runs.</p><div className="grid gap-4 sm:grid-cols-2">{schema.map((variable) => <VariableField key={variable.key} variable={variable} value={variableValues[variable.key]} onChange={(value) => setVariableValues((current) => ({ ...current, [variable.key]: value }))} />)}</div></fieldset>
+        ) : null}
+        <div className="flex justify-end gap-3 border-t border-guard-line pt-5"><button type="button" onClick={onClose} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">Cancel</button><button type="submit" disabled={pending} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{pending ? "Saving..." : mode === "edit" ? "Update Test Case" : "Add Test Case"}</button></div>
+      </form>
+    </Modal>
+  );
+}
+
+function VariableField({ variable, value, onChange }: { variable: PromptVariable; value: string | number | boolean | null; onChange: (value: string | number | boolean | null) => void }) {
+  const inputId = `test-case-variable-${variable.key}`;
+  return <div className={variable.type === "long_text" ? "sm:col-span-2" : ""}><label htmlFor={inputId} className="text-sm font-medium text-guard-text">{variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}</label>{variable.type === "long_text" ? <TextArea id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24" /> : variable.type === "boolean" ? <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select> : variable.type === "select" ? <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select> : <TextInput id={inputId} type={variable.type === "number" ? "number" : "text"} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2" />}{variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}</div>;
+}
+
+function CopyIconButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+  return <button type="button" onClick={copy} aria-label={label} title={label} className={cn("focus-ring rounded-md p-1.5 transition", copied ? "bg-guard-greenSoft text-guard-green" : "text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary")}><Clipboard className="h-4 w-4" /></button>;
+}
+
+function Modal({ title, description, onClose, children, wide = false }: { title: string; description: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => { if (dialog?.open) dialog.close(); };
+  }, []);
+  return <dialog ref={ref} aria-labelledby="workspace-dialog-title" aria-describedby="workspace-dialog-description" onCancel={(event) => { event.preventDefault(); onClose(); }} className={cn("m-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-guard-line bg-white p-0 text-guard-text shadow-floating backdrop:bg-slate-950/25", wide ? "max-w-3xl" : "max-w-lg")}><div className="flex max-h-[90dvh] flex-col"><header className="flex items-start justify-between gap-4 border-b border-guard-line px-5 py-5 sm:px-6"><div><h2 id="workspace-dialog-title" className="text-xl font-semibold tracking-tight text-guard-ink">{title}</h2><p id="workspace-dialog-description" className="mt-1 text-sm leading-6 text-guard-muted">{description}</p></div><button type="button" onClick={onClose} aria-label="Close dialog" className="focus-ring rounded-lg p-2 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div></div></dialog>;
 }

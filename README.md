@@ -1,6 +1,6 @@
 # LaunchGuard AI Evaluator
 
-LaunchGuard is an open, collaborative workspace for testing and improving AI prompts through structured evaluation. Visitors can browse public workspaces, create AI projects, version prompts, define criteria, build golden datasets, run AI outputs, complete human reviews, analyze failures, draft improved prompts, and export evaluation data without creating an account.
+LaunchGuard is an open, collaborative workspace for testing and improving AI prompts through structured evaluation. Visitors can browse public workspaces, create AI projects, version prompts, define criteria, build golden datasets, run and review AI outputs, analyze failures, draft improved prompts, and export evaluation data without creating an account.
 
 ## Public Prototype Model
 
@@ -9,7 +9,7 @@ The product is organized as:
 1. Public workspace directory.
 2. Individual public workspace.
 3. AI evaluation projects inside each workspace.
-4. Prompt versions, criteria, golden datasets, generated outputs, human review, results, reports, and CSV export inside each project.
+4. Prompt versions, criteria, a unified Golden Dataset and human-review workspace, results, reports, and CSV export inside each project.
 
 This prototype has no authentication, ownership roles, invitations, private workspaces, request quotas, or usage caps. All workspaces and project data are publicly readable and publicly editable through the publishable Supabase key.
 
@@ -153,8 +153,8 @@ npm run build
 - `/workspaces/[workspaceSlug]/projects/[projectId]/prompts/new`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/prompts/[versionId]/edit`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/criteria`
-- `/workspaces/[workspaceSlug]/projects/[projectId]/dataset`
-- `/workspaces/[workspaceSlug]/projects/[projectId]/review`
+- `/workspaces/[workspaceSlug]/projects/[projectId]/dataset` - primary test-case, output-generation, and human-review workflow
+- `/workspaces/[workspaceSlug]/projects/[projectId]/review` - backward-compatible server redirect to `/dataset`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/results`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/reports`
 
@@ -184,4 +184,4 @@ Every AI route validates workspace, project, prompt-version, and test-case relat
 - There is no change attribution, revision audit log, undo history, moderation, or abuse protection.
 - OpenAI usage is paid by the server-side API key owner and is intentionally uncapped in this prototype.
 - Concurrent editors can overwrite one another because real-time conflict handling is not included.
-- LLM-as-a-judge remains outside this MVP; review scores are human-entered.
+- LLM-as-a-judge remains outside this MVP; ratings entered in Golden Dataset are human-authored and remain stored in `human_reviews` and `human_review_ratings`.
