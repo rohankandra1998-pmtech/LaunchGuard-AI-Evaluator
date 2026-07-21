@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlertCircle, Check, CircleDot, GripVertical, Info, Loader2, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { AlertCircle, Check, CircleDot, GripVertical, Info, Loader2, Pencil, Plus, Search, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { deleteCriterion, reorderCriteria, saveCriterion, saveSuggestedCriteria } from "@/app/actions";
 import { Badge, EmptyState, Select, TextArea, TextInput } from "@/components/ui";
 import { criterionFieldLimits, validateCriterion, type CriterionField, type CriterionValidationErrors, type SuggestedCriterionInput } from "@/lib/criteria";
@@ -154,10 +154,17 @@ function SuggestionCard({ item, index, saving, actionsDisabled, onEdit, onUpdate
 
   return (
     <article aria-busy={saving} className="overflow-hidden rounded-xl border border-guard-line bg-white">
-      <div className="flex items-start gap-3 p-4 sm:p-5">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-guard-primarySoft text-sm font-semibold text-guard-primary">{index + 1}</span>
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words font-semibold text-guard-ink">{item.draft.name}</h3>{item.draft.category ? <Badge tone="primary">{item.draft.category}</Badge> : null}</div><p className="mt-1.5 break-words text-sm leading-5 text-guard-muted">{item.draft.description}</p></div>
-        <button id={`edit-${item.id}`} type="button" onClick={onEdit} disabled={actionsDisabled} aria-label={`Edit ${item.draft.name || "suggested criterion"}`} className="focus-ring inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-ink hover:bg-guard-surfaceMuted disabled:opacity-50"><Pencil aria-hidden="true" className="h-4 w-4" /><span className="hidden min-[430px]:inline">Edit</span></button>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 p-4 sm:p-5">
+        <span className="row-span-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-guard-primarySoft text-sm font-semibold text-guard-primary">{index + 1}</span>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="break-words font-semibold text-guard-ink">{item.draft.name}</h3>
+          {item.draft.category ? <Badge tone="primary">{item.draft.category}</Badge> : null}
+        </div>
+        <button id={`edit-${item.id}`} type="button" onClick={onEdit} disabled={actionsDisabled} aria-label={`Edit ${item.draft.name || "suggested criterion"}`} className="focus-ring inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-3 py-2 text-sm font-semibold text-guard-ink hover:bg-guard-surfaceMuted disabled:opacity-50">
+          <Pencil aria-hidden="true" className="h-4 w-4" />
+          <span className="hidden min-[430px]:inline">Edit</span>
+        </button>
+        <p className="col-start-2 col-end-4 break-words text-sm leading-5 text-guard-muted">{item.draft.description}</p>
       </div>
       <dl className="grid gap-3 px-4 pb-4 sm:grid-cols-3 sm:px-5 sm:pb-5"><div className="rounded-lg border border-guard-criterionGoodBorder bg-guard-criterionGoodSurface p-3.5"><dt className="text-xs font-semibold text-guard-green">Good</dt><dd className="mt-1.5 break-words text-sm leading-5 text-guard-text">{item.draft.good_definition}</dd></div><div className="rounded-lg border border-guard-criterionAverageBorder bg-guard-criterionAverageSurface p-3.5"><dt className="text-xs font-semibold text-guard-amber">Average</dt><dd className="mt-1.5 break-words text-sm leading-5 text-guard-text">{item.draft.average_definition}</dd></div><div className="rounded-lg border border-guard-criterionBadBorder bg-guard-criterionBadSurface p-3.5"><dt className="text-xs font-semibold text-guard-red">Bad</dt><dd className="mt-1.5 break-words text-sm leading-5 text-guard-text">{item.draft.bad_definition}</dd></div></dl>
       <div className="flex justify-end border-t border-guard-line px-4 py-3"><button type="button" onClick={onAccept} disabled={actionsDisabled} aria-label={`Add ${item.draft.name || "suggested"} criterion`} className="focus-ring inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-60">{saving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}{saving ? "Adding..." : "Add criterion"}</button></div>
@@ -528,8 +535,17 @@ function CriterionRow({ criterion, workspaceSlug, projectId, editing, canReorder
       <div className="col-start-2 min-w-0 lg:col-start-auto lg:pr-5"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-guard-ink">{criterion.name}</h3>{criterion.category ? <Badge tone="primary">{criterion.category}</Badge> : null}</div><p className="mt-2 text-sm leading-5 text-guard-muted">{criterion.description}</p></div>
       <Definition tone="good" label="Good" className="col-start-2 lg:col-start-auto">{criterion.good_definition}</Definition><Definition tone="average" label="Average" className="col-start-2 lg:col-start-auto">{criterion.average_definition}</Definition><Definition tone="bad" label="Bad" className="col-start-2 lg:col-start-auto">{criterion.bad_definition}</Definition>
       <div className="col-start-2 flex items-start justify-end gap-1 border-t border-guard-line pt-3 lg:col-start-auto lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
-        <button type="button" aria-label={`Edit ${criterion.name}`} onClick={(e) => onEdit(e.currentTarget)} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-primaryLine text-guard-primary hover:bg-guard-primarySoft"><Pencil className="h-4 w-4" /></button>
-        <details className="relative"><summary aria-label={`More actions for ${criterion.name}`} className="focus-ring flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-guard-line text-guard-muted hover:bg-guard-surfaceMuted [&::-webkit-details-marker]:hidden"><MoreHorizontal className="h-4 w-4" /></summary><div className="absolute right-0 top-11 z-20 w-44 rounded-xl border border-guard-line bg-white p-1.5 shadow-floating"><form action={deleteCriterion}><input type="hidden" name="id" value={criterion.id} /><input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="workspace_slug" value={workspaceSlug} /><button type="submit" onClick={(e) => { if (!window.confirm(`Delete “${criterion.name}”? This criterion will no longer be available for future reviews.`)) e.preventDefault(); }} className="focus-ring flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-guard-red hover:bg-guard-redSoft"><Trash2 className="h-4 w-4" />Delete criterion</button></form></div></details>
+        <button type="button" aria-label={`Edit ${criterion.name}`} onClick={(e) => onEdit(e.currentTarget)} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-primaryLine text-guard-primary hover:bg-guard-primarySoft">
+          <Pencil aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <form action={deleteCriterion}>
+          <input type="hidden" name="id" value={criterion.id} />
+          <input type="hidden" name="project_id" value={projectId} />
+          <input type="hidden" name="workspace_slug" value={workspaceSlug} />
+          <button type="submit" aria-label={`Delete ${criterion.name}`} title={`Delete ${criterion.name}`} onClick={(e) => { if (!window.confirm(`Delete “${criterion.name}”? This criterion will no longer be available for future reviews.`)) e.preventDefault(); }} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-lineStrong text-guard-red hover:border-red-200 hover:bg-guard-redSoft">
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </form>
       </div>
     </article>
   );
