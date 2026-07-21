@@ -28,7 +28,13 @@ const config: Config = {
           amber: "#A65108",
           amberSoft: "#FEF3C7",
           red: "#DC2626",
-          redSoft: "#FEE2E2"
+          redSoft: "#FEE2E2",
+          criterionGoodSurface: "#F7FCF7",
+          criterionGoodBorder: "#D8EEDA",
+          criterionAverageSurface: "#FEFAF4",
+          criterionAverageBorder: "#F0DFC2",
+          criterionBadSurface: "#FEF5F5",
+          criterionBadBorder: "#F1D8D8"
         }
       },
       boxShadow: {
