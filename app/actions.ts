@@ -583,17 +583,14 @@ export async function saveHumanReview(formData: FormData) {
   if (criterionIds.length !== savedCriterionIds.size || criterionIds.some((id) => !savedCriterionIds.has(id))) {
     throw new Error("Rate every saved evaluation criterion before marking this case as reviewed.");
   }
-  const severity = formString(formData, "severity");
-  if (severity && !["Low", "Medium", "High"].includes(severity)) throw new Error("Unsupported review severity.");
-
   const { data: review, error: reviewError } = await supabase
     .from("human_reviews")
     .upsert(
       {
         project_id: projectId,
         test_case_id: testCaseId,
-        failure_category: formString(formData, "failure_category") || null,
-        severity: severity || null,
+        failure_category: null,
+        severity: null,
         human_notes: formString(formData, "human_notes") || null,
         reviewed_at: new Date().toISOString()
       },

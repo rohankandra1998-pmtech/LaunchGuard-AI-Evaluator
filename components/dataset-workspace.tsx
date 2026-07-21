@@ -561,10 +561,9 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
         ))}
       </div>
 
-      <div className="grid gap-4 border-t border-guard-line pt-5 md:grid-cols-[1fr_0.65fr_1.5fr]">
-        <div><Label>Failure Category</Label><TextInput name="failure_category" defaultValue={review?.failure_category || ""} placeholder="Hallucination, policy miss, tone, refusal" className="mt-2" /></div>
-        <div><Label>Severity</Label><Select name="severity" defaultValue={review?.severity || ""} className="mt-2"><option value="">None</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></Select></div>
-        <div><Label>Human Notes</Label><TextArea name="human_notes" defaultValue={review?.human_notes || ""} placeholder="Add context about what worked, what failed, and why it matters." maxLength={1000} className="mt-2 min-h-20" /></div>
+      <div className="border-t border-guard-line pt-5">
+        <Label>Human Notes</Label>
+        <TextArea name="human_notes" defaultValue={review?.human_notes || ""} placeholder="Explain what worked, what failed, and why you gave these ratings." maxLength={1000} className="mt-2 min-h-32 w-full" />
       </div>
       <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-guard-line bg-guard-surfaceMuted px-4 py-3 shadow-card"><p className="text-xs text-guard-muted">{complete ? "All criteria rated. Ready to save." : `Rate all ${criteria.length} criteria to continue.`}</p><button type="submit" disabled={!complete || pending} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{pending ? "Saving review..." : review ? "Update Review" : "Mark as Reviewed"}</button></div>
     </form>
