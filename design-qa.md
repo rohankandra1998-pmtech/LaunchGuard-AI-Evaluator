@@ -76,6 +76,40 @@
 
 final result: passed
 
+## Golden Dataset Semantic Rating Icons - July 20, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 20, 2026, 06_36_17 PM.png`
+- Existing-state reference: `C:\Users\Rohan\AppData\Local\Temp\codex-clipboard-c2c243bd-9a17-4571-af5a-745bd9217a4e.png`
+- Desktop implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-desktop.png`
+- Selected and keyboard-focus state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-selected.png`
+- Two-column implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-two-column.png`
+- Mobile implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-mobile.png`
+- Combined focused comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-comparison.png`
+- Viewports: default four-card workspace, 1024 x 900 two-column layout, and 390 x 844 mobile layout.
+
+**Findings**
+
+- The implementation matches the source's semantic rating language with Lucide `ThumbsUp`, a 90-degree rotated `ThumbsUp`, and `ThumbsDown` icons using the existing green, amber, and red LaunchGuard tokens.
+- The first responsive pass exposed a P2 overlap at the narrow four-card workspace width. Replacing the fixed three-column control grid with a wrapping flex row keeps every icon and label intact; the four-card view wraps vertically, the two-column view uses two rows, and mobile keeps all three choices on one row.
+- Bounding-box checks found no rating-control overflow at any tested layout, and the 1024 px and 390 px pages have no horizontal document overflow.
+- The supplied PNG icon examples were used only as visual references because their checkerboard backgrounds are baked into the raster. No raster asset or new icon dependency was introduced.
+- No actionable P0, P1, or P2 visual differences remain in the semantic-rating scope.
+
+**Interaction and Accessibility QA**
+
+- Good, Average, and Bad were selected in the real review form and each exposed its exact expected value.
+- Native required radio inputs remain grouped by `rating_${criterion.id}` and retain saved-rating prepopulation.
+- Every visible control has semantic hover and checked colors. The selected control exposes a two-pixel `focus-visible` ring with offset; the focused selected state was visually captured.
+- All four criteria were rated and the real `Mark as Reviewed` action completed. Reopening case `TC-276B5D` showed `Update Review` with all four saved Good ratings prepopulated.
+
+**Comparison History**
+
+- The existing workspace used text-only Good/Average/Bad controls.
+- The initial icon implementation preserved form behavior but let labels collide in the narrow four-card review panel; the responsive wrapping correction removed the collision without hiding labels or changing data behavior.
+- Final side-by-side inspection confirms semantic icon direction, token colors, selected emphasis, keyboard focus visibility, and compact responsive wrapping.
+
+final result: passed
+
 ## Golden Dataset Review Workspace - July 20, 2026
 
 - Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 20, 2026, 06_36_17 PM.png`

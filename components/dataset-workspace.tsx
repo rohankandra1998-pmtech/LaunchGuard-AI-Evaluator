@@ -17,6 +17,8 @@ import {
   Plus,
   Search,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   X
 } from "lucide-react";
@@ -50,6 +52,21 @@ const typeTones: Record<string, "neutral" | "primary" | "average" | "bad" | "goo
   missing_context: "neutral",
   adversarial: "bad",
   tone_sensitive: "primary"
+};
+const ratingOptions: Record<RatingLabel, { icon: typeof ThumbsUp; iconClassName?: string; styles: string }> = {
+  Good: {
+    icon: ThumbsUp,
+    styles: "border-green-200 text-guard-green hover:bg-guard-greenSoft/60 peer-checked:border-guard-green peer-checked:bg-guard-greenSoft peer-checked:shadow-sm"
+  },
+  Average: {
+    icon: ThumbsUp,
+    iconClassName: "rotate-90",
+    styles: "border-amber-200 text-guard-amber hover:bg-guard-amberSoft/60 peer-checked:border-guard-amber peer-checked:bg-guard-amberSoft peer-checked:shadow-sm"
+  },
+  Bad: {
+    icon: ThumbsDown,
+    styles: "border-red-200 text-guard-red hover:bg-guard-redSoft/60 peer-checked:border-guard-red peer-checked:bg-guard-redSoft peer-checked:shadow-sm"
+  }
 };
 
 type Toast = { tone: "success" | "error"; message: string } | null;
@@ -533,10 +550,11 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
         {criteria.map((criterion) => (
           <fieldset key={criterion.id} className="min-w-0 rounded-xl border border-guard-line bg-white p-4">
             <div className="flex items-start justify-between gap-2"><div><legend className="text-sm font-semibold text-guard-ink">{criterion.name}</legend><p className="mt-1 line-clamp-2 text-xs leading-5 text-guard-muted">{criterion.description}</p></div><details className="relative shrink-0"><summary aria-label={`Show rating definitions for ${criterion.name}`} className="focus-ring cursor-pointer list-none rounded-md p-1 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary"><Info className="h-4 w-4" /></summary><div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-guard-line bg-white p-4 text-xs leading-5 text-guard-text shadow-floating"><p><strong className="text-guard-green">Good:</strong> {criterion.good_definition}</p><p className="mt-2"><strong className="text-guard-amber">Average:</strong> {criterion.average_definition}</p><p className="mt-2"><strong className="text-guard-red">Bad:</strong> {criterion.bad_definition}</p></div></details></div>
-            <div className="mt-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label={`${criterion.name} rating`}>
+            <div className="mt-4 flex flex-wrap gap-2" role="radiogroup" aria-label={`${criterion.name} rating`}>
               {(["Good", "Average", "Bad"] as const).map((rating) => {
-                const styles = rating === "Good" ? "border-green-200 text-guard-green peer-checked:border-guard-green peer-checked:bg-guard-greenSoft" : rating === "Average" ? "border-amber-200 text-guard-amber peer-checked:border-guard-amber peer-checked:bg-guard-amberSoft" : "border-red-200 text-guard-red peer-checked:border-guard-red peer-checked:bg-guard-redSoft";
-                return <label key={rating} className="cursor-pointer"><input className="peer sr-only" required type="radio" name={`rating_${criterion.id}`} value={rating} checked={selectedRatings[criterion.id] === rating} onChange={() => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} /><span className={cn("focus-ring flex min-h-9 items-center justify-center rounded-lg border bg-white px-2 text-xs font-semibold transition hover:brightness-95", styles)}>{rating}</span></label>;
+                const option = ratingOptions[rating];
+                const RatingIcon = option.icon;
+                return <label key={rating} className="min-w-0 cursor-pointer"><input className="peer sr-only" required type="radio" name={`rating_${criterion.id}`} value={rating} checked={selectedRatings[criterion.id] === rating} onChange={() => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} /><span className={cn("flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-lg border bg-white px-1.5 text-xs font-semibold transition peer-focus-visible:ring-2 peer-focus-visible:ring-guard-primary/70 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white", option.styles)}><RatingIcon aria-hidden="true" className={cn("h-3.5 w-3.5 shrink-0", option.iconClassName)} /><span>{rating}</span></span></label>;
               })}
             </div>
           </fieldset>
