@@ -70,6 +70,78 @@ function DrawerShell({ title, description, pending = false, size = "default", on
   );
 }
 
+function DeleteCriterionDialog({ criterion, workspaceSlug, projectId, onClose, onDeleted }: { criterion: EvaluationCriterion; workspaceSlug: string; projectId: string; onClose: () => void; onDeleted: (criterionId: string) => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.showModal();
+    const focusFrame = window.requestAnimationFrame(() => cancelRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  function requestClose() {
+    if (!pending) dialogRef.current?.close();
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      try {
+        await deleteCriterion(formData);
+        onDeleted(criterion.id);
+      } catch {
+        setError("This criterion could not be deleted. Please try again.");
+      }
+    });
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={pending}
+      onClose={onClose}
+      onCancel={(event) => { event.preventDefault(); requestClose(); }}
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100vw-2rem))] max-w-none overflow-y-auto rounded-2xl border border-guard-line bg-white p-0 text-left text-guard-text shadow-floating backdrop:bg-slate-900/20"
+    >
+      <div className="p-5 sm:p-6">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-guard-redSoft text-guard-red">
+          <Trash2 aria-hidden="true" className="h-5 w-5" />
+        </div>
+        <h2 id={titleId} className="mt-4 text-xl font-semibold tracking-tight text-guard-ink">Delete criterion?</h2>
+        <div id={descriptionId} className="mt-2 text-sm leading-6 text-guard-muted">
+          <p>You&apos;re about to delete “{criterion.name}”. This criterion will no longer be available for future reviews.</p>
+          <p className="mt-2 font-semibold text-guard-text">This action cannot be undone.</p>
+        </div>
+        {error ? <div role="alert" className="mt-4 flex gap-2 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />{error}</div> : null}
+        <form onSubmit={submit} className="mt-6 flex flex-col-reverse gap-3 min-[430px]:flex-row min-[430px]:justify-end">
+          <input type="hidden" name="id" value={criterion.id} />
+          <input type="hidden" name="project_id" value={projectId} />
+          <input type="hidden" name="workspace_slug" value={workspaceSlug} />
+          <button ref={cancelRef} type="button" onClick={requestClose} disabled={pending} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-ink hover:bg-guard-surfaceMuted disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+          <button type="submit" disabled={pending} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-red px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+            {pending ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Trash2 aria-hidden="true" className="h-4 w-4" />}
+            {pending ? "Deleting…" : "Delete criterion"}
+          </button>
+        </form>
+      </div>
+    </dialog>
+  );
+}
+
 function Field({ label, required = false, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return <label className="grid gap-2 text-sm font-semibold text-guard-ink"><span>{label}{required ? <span className="ml-1 text-guard-red" aria-hidden="true">*</span> : null}</span>{children}</label>;
 }
@@ -350,7 +422,10 @@ export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criter
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [reorderToast, setReorderToast] = useState<ReorderToast | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<EvaluationCriterion | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const savedCriteriaHeadingRef = useRef<HTMLHeadingElement>(null);
   const dragStartOrderRef = useRef<EvaluationCriterion[] | null>(null);
   const latestOrderRef = useRef(criteria);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -377,6 +452,25 @@ export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criter
   const canReorder = persistedCriteria.length > 1 && !filtersActive && !savingOrder;
   function openDrawer(next: Exclude<DrawerState, null>, trigger: HTMLElement) { triggerRef.current = trigger; setDrawer(next); }
   function closeDrawer() { setDrawer(null); window.requestAnimationFrame(() => triggerRef.current?.focus()); }
+  function openDeleteDialog(criterion: EvaluationCriterion, trigger: HTMLButtonElement) {
+    deleteTriggerRef.current = trigger;
+    setDeleteTarget(criterion);
+  }
+  function closeDeleteDialog() {
+    setDeleteTarget(null);
+    window.requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+  }
+  function completeDelete(criterionId: string) {
+    setPersistedCriteria((current) => {
+      const next = current.filter((criterion) => criterion.id !== criterionId);
+      latestOrderRef.current = next;
+      return next;
+    });
+    deleteTriggerRef.current = null;
+    setDeleteTarget(null);
+    router.refresh();
+    window.requestAnimationFrame(() => savedCriteriaHeadingRef.current?.focus());
+  }
   function dismissToast() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = null;
@@ -491,7 +585,7 @@ export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criter
       <aside className="mb-7 flex gap-3 rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted px-4 py-3.5"><Info className="mt-0.5 h-5 w-5 shrink-0 text-guard-primary" /><div><p className="text-sm font-semibold text-guard-ink">These criteria are used during Human Review</p><p className="mt-1 text-sm leading-5 text-guard-muted">Reviewers score each response using your definitions of Good, Average, and Bad.</p></div></aside>
       <section aria-labelledby="saved-criteria-heading">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div><div className="flex flex-wrap items-center gap-2.5"><h2 id="saved-criteria-heading" className="text-xl font-semibold text-guard-ink">Saved Evaluation Criteria</h2><Badge tone="primary">{count}</Badge></div><p className="mt-1.5 text-sm text-guard-muted">Manage the rubric reviewers use to evaluate AI responses.</p></div>
+          <div><div className="flex flex-wrap items-center gap-2.5"><h2 ref={savedCriteriaHeadingRef} id="saved-criteria-heading" tabIndex={-1} className="text-xl font-semibold text-guard-ink">Saved Evaluation Criteria</h2><Badge tone="primary">{count}</Badge></div><p className="mt-1.5 text-sm text-guard-muted">Manage the rubric reviewers use to evaluate AI responses.</p></div>
           {persistedCriteria.length ? <div className="flex flex-col gap-3 sm:flex-row"><label className="relative sm:w-64"><span className="sr-only">Search criteria</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-guard-muted" /><TextInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search criteria..." className="h-10 pl-9" /></label><label><span className="sr-only">Filter by category</span><Select value={category} onChange={(e) => setCategory(e.target.value)} className="h-10 min-w-48"><option value="all">All categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</Select></label></div> : null}
         </div>
         {reorderError ? <div role="alert" className="mt-4 flex gap-2 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{reorderError}</div> : null}
@@ -500,7 +594,7 @@ export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criter
             <div className="mt-5 grid gap-3" aria-busy={savingOrder}>
               {!persistedCriteria.length ? <EmptyState title="Build your human review rubric"><span>Define the standards reviewers will use to score AI responses.</span><span className="mt-5 flex flex-col justify-center gap-3 sm:flex-row"><button type="button" onClick={(e) => openDrawer({ type: "create" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add criterion</button>{activePrompt ? <button type="button" onClick={(e) => openDrawer({ type: "suggestions" }, e.currentTarget)} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover"><Sparkles className="h-4 w-4" />Suggest with AI</button> : null}</span></EmptyState>
               : !visibleCriteria.length ? <EmptyState title="No criteria match your filters"><span>Try a different search or category.</span><span className="mt-5 flex justify-center"><button type="button" onClick={() => { setSearch(""); setCategory("all"); }} className="focus-ring rounded-lg border border-guard-primaryLine bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover">Clear filters</button></span></EmptyState>
-              : visibleCriteria.map((criterion) => <CriterionRow key={criterion.id} criterion={criterion} workspaceSlug={workspaceSlug} projectId={project.id} editing={drawer?.type === "edit" && drawer.criterion.id === criterion.id} canReorder={canReorder} filtersActive={filtersActive} totalCriteria={persistedCriteria.length} onEdit={(trigger) => openDrawer({ type: "edit", criterion }, trigger)} />)}
+              : visibleCriteria.map((criterion) => <CriterionRow key={criterion.id} criterion={criterion} editing={drawer?.type === "edit" && drawer.criterion.id === criterion.id} canReorder={canReorder} filtersActive={filtersActive} totalCriteria={persistedCriteria.length} onEdit={(trigger) => openDrawer({ type: "edit", criterion }, trigger)} onDelete={(trigger) => openDeleteDialog(criterion, trigger)} />)}
             </div>
           </SortableContext>
         </DndContext>
@@ -515,11 +609,12 @@ export function CriteriaWorkspace({ workspaceSlug, project, activePrompt, criter
       {drawer?.type === "create" ? <CriterionDrawer mode="create" workspaceSlug={workspaceSlug} projectId={project.id} onClose={closeDrawer} /> : null}
       {drawer?.type === "edit" ? <CriterionDrawer mode="edit" criterion={drawer.criterion} workspaceSlug={workspaceSlug} projectId={project.id} onClose={closeDrawer} /> : null}
       {drawer?.type === "suggestions" ? <SuggestionsDrawer workspaceSlug={workspaceSlug} projectId={project.id} savedCriteriaCount={persistedCriteria.length} hasActivePrompt={Boolean(activePrompt)} onClose={closeDrawer} /> : null}
+      {deleteTarget ? <DeleteCriterionDialog criterion={deleteTarget} workspaceSlug={workspaceSlug} projectId={project.id} onClose={closeDeleteDialog} onDeleted={completeDelete} /> : null}
     </>
   );
 }
 
-function CriterionRow({ criterion, workspaceSlug, projectId, editing, canReorder, filtersActive, totalCriteria, onEdit }: { criterion: EvaluationCriterion; workspaceSlug: string; projectId: string; editing: boolean; canReorder: boolean; filtersActive: boolean; totalCriteria: number; onEdit: (trigger: HTMLButtonElement) => void }) {
+function CriterionRow({ criterion, editing, canReorder, filtersActive, totalCriteria, onEdit, onDelete }: { criterion: EvaluationCriterion; editing: boolean; canReorder: boolean; filtersActive: boolean; totalCriteria: number; onEdit: (trigger: HTMLButtonElement) => void; onDelete: (trigger: HTMLButtonElement) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: criterion.id, disabled: !canReorder });
   const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined };
   const disabledLabel = filtersActive
@@ -538,14 +633,9 @@ function CriterionRow({ criterion, workspaceSlug, projectId, editing, canReorder
         <button type="button" aria-label={`Edit ${criterion.name}`} onClick={(e) => onEdit(e.currentTarget)} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-primaryLine text-guard-primary hover:bg-guard-primarySoft">
           <Pencil aria-hidden="true" className="h-4 w-4" />
         </button>
-        <form action={deleteCriterion}>
-          <input type="hidden" name="id" value={criterion.id} />
-          <input type="hidden" name="project_id" value={projectId} />
-          <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-          <button type="submit" aria-label={`Delete ${criterion.name}`} title={`Delete ${criterion.name}`} onClick={(e) => { if (!window.confirm(`Delete “${criterion.name}”? This criterion will no longer be available for future reviews.`)) e.preventDefault(); }} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-lineStrong text-guard-red hover:border-red-200 hover:bg-guard-redSoft">
-            <Trash2 aria-hidden="true" className="h-4 w-4" />
-          </button>
-        </form>
+        <button type="button" aria-label={`Delete ${criterion.name}`} title={`Delete ${criterion.name}`} onClick={(event) => onDelete(event.currentTarget)} className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg border border-guard-lineStrong text-guard-red hover:border-red-200 hover:bg-guard-redSoft">
+          <Trash2 aria-hidden="true" className="h-4 w-4" />
+        </button>
       </div>
     </article>
   );
