@@ -404,7 +404,7 @@ export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
                 <h2 className="text-lg font-semibold text-guard-ink">Final Prompt Preview</h2>
                 <p className="mt-1 text-sm text-guard-muted">The exact compiled system prompt sent to the model.</p>
               </div>
-              <CopyButton text={preview.compiledPrompt} disabled={!preview.compiledPrompt || preview.errors.length > 0} />
+              <CopyButton text={preview.compiledPrompt} contextLabel="compiled prompt" disabled={!preview.compiledPrompt || preview.errors.length > 0} disabledTitle="Resolve preview errors before copying the compiled prompt." />
             </div>
             {preview.errors.length ? (
               <div className="mt-4 rounded-lg border border-amber-200 bg-guard-amberSoft p-3 text-sm text-guard-amber">

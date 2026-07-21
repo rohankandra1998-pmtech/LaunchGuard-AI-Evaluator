@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clipboard,
   Database,
   Info,
   Loader2,
@@ -23,6 +22,7 @@ import {
   X
 } from "lucide-react";
 import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase } from "@/app/actions";
+import { CopyButton } from "@/components/copy-button";
 import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type {
@@ -498,17 +498,20 @@ function ReviewPanel({
 
       <div className="space-y-5 p-5">
         <div>
-          <div className="mb-2 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-guard-ink">User Input</h3><CopyIconButton text={selected.user_input} label="Copy user input" /></div>
-          <div className="rounded-xl border border-guard-primaryLine/70 bg-guard-surfaceMuted px-4 py-3 text-sm leading-6 text-guard-ink">{selected.user_input}</div>
+          <h3 className="mb-2 text-sm font-semibold text-guard-ink">User Input</h3>
+          <div className="relative rounded-xl border border-guard-primaryLine/70 bg-guard-surfaceMuted px-4 py-3 pr-28 text-sm leading-6 text-guard-ink sm:pr-32">
+            <CopyButton text={selected.user_input} contextLabel="user input" className="absolute right-3 top-3" />
+            {selected.user_input}
+          </div>
         </div>
 
         {hasOutput ? (
           <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-guard-ink">AI Output</h3><Badge tone="neutral">{selected.model_used || "Model unknown"}</Badge><Badge tone="primary">{prompt ? `v${prompt.version_number}` : "Prompt unknown"}</Badge><span className="text-xs font-medium text-guard-green">{selected.status === "reviewed" ? "Reviewed" : "Output ready"}</span></div>
-              <CopyIconButton text={selected.generated_ai_output || ""} label="Copy AI output" />
+            <div className="mb-2 flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-guard-ink">AI Output</h3><Badge tone="neutral">{selected.model_used || "Model unknown"}</Badge><Badge tone="primary">{prompt ? `v${prompt.version_number}` : "Prompt unknown"}</Badge><span className="text-xs font-medium text-guard-green">{selected.status === "reviewed" ? "Reviewed" : "Output ready"}</span></div>
+            <div className="relative whitespace-pre-wrap rounded-xl border border-green-100 bg-green-50/60 px-4 py-4 pr-28 text-sm leading-7 text-guard-ink sm:pr-32">
+              <CopyButton text={selected.generated_ai_output || ""} contextLabel="AI output" className="absolute right-3 top-3" />
+              {selected.generated_ai_output}
             </div>
-            <div className="whitespace-pre-wrap rounded-xl border border-green-100 bg-green-50/60 px-4 py-4 text-sm leading-7 text-guard-ink">{selected.generated_ai_output}</div>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-guard-primaryLine bg-guard-surfaceMuted p-7 text-center">
@@ -538,6 +541,14 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
   const complete = criteria.every((criterion) => selectedRatings[criterion.id]);
   const hasSelectedRatings = Object.keys(selectedRatings).length > 0;
 
+  function clearCriterionRating(criterionId: string) {
+    setSelectedRatings((current) => {
+      const next = { ...current };
+      delete next[criterionId];
+      return next;
+    });
+  }
+
   async function submit(formData: FormData) {
     setPending(true);
     try {
@@ -556,7 +567,11 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
       <div className="grid gap-4 xl:grid-cols-2">
         {criteria.map((criterion) => (
           <fieldset key={criterion.id} className="min-w-0 rounded-xl border border-guard-line bg-white p-4 sm:p-5">
-            <legend className="text-sm font-semibold text-guard-ink">{criterion.name}</legend>
+            <legend className="sr-only">{criterion.name}</legend>
+            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+              <h3 className="min-w-0 flex-1 text-sm font-semibold text-guard-ink">{criterion.name}</h3>
+              {selectedRatings[criterion.id] ? <button type="button" disabled={pending} onClick={() => clearCriterionRating(criterion.id)} aria-label={`Clear rating for ${criterion.name}`} className="focus-ring min-h-10 shrink-0 rounded-lg px-2.5 py-2 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:text-slate-400">Clear rating</button> : null}
+            </div>
             <p className="mt-1 text-xs leading-5 text-guard-muted">{criterion.description}</p>
             <div className="mt-4 space-y-2.5">
               <RatingDefinitionOption criterion={criterion} rating="Good" selectedRating={selectedRatings[criterion.id]} onSelect={(rating) => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} />
@@ -635,19 +650,6 @@ function VariableField({ variable, value, onChange }: { variable: PromptVariable
   return <div className={variable.type === "long_text" ? "sm:col-span-2" : ""}><label htmlFor={inputId} className="text-sm font-medium text-guard-text">{variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}</label>{variable.type === "long_text" ? <TextArea id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24" /> : variable.type === "boolean" ? <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select> : variable.type === "select" ? <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select> : <TextInput id={inputId} type={variable.type === "number" ? "number" : "text"} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2" />}{variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}</div>;
 }
 
-function CopyIconButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  }
-  return <button type="button" onClick={copy} aria-label={label} title={label} className={cn("focus-ring rounded-md p-1.5 transition", copied ? "bg-guard-greenSoft text-guard-green" : "text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary")}><Clipboard className="h-4 w-4" /></button>;
-}
 
 function Modal({ title, description, onClose, children, wide = false }: { title: string; description: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);

@@ -1,5 +1,19 @@
 # Design QA
 
+## Golden Dataset Review Interaction Refinement - July 21, 2026
+
+- Scope: criterion-level local rating clearing and shared labeled Copy buttons inside User Input and AI Output surfaces.
+- Source references: `codex-clipboard-491469f3-608a-4c63-8dc7-d11e8f039e82.png`, `codex-clipboard-3c6a9034-e0c0-4660-b9c9-3a779998613e.png`, `codex-clipboard-47050cd5-0d15-4a1f-be37-b72fdcc22123.png`, `codex-clipboard-f71844e3-3291-49a6-a4d3-18a3d95380e7.png`, and `codex-clipboard-9c522b62-719e-4d35-bd22-a3deccdd8b9e.png`.
+- Desktop Copy/Copied evidence: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\review-copy-buttons-copied-desktop.png`.
+- Browser interaction results: selecting and clearing one criterion changed only that local radio group, kept Human Notes unchanged, left the submission disabled, and preserved the global Clear Ratings action.
+- Copy-button results: User Input and AI Output exposed context-specific accessible names, changed from Copy to Copied, reset after the existing timer, and copied exact live values after isolated clipboard checks. Prompt Version retains its compiled-prompt context and disabled explanation.
+- Accessibility: native required radio groups remain intact; the criterion Clear action is a separate `type="button"` with a criterion-specific accessible label and focus treatment; shared CopyButton status announcements now identify their content context.
+- Responsive implementation: labeled Copy controls remain absolutely positioned inside relative content surfaces with reserved text padding; criterion headers wrap independently from their conditional Clear actions; no fixed content heights were introduced.
+- Validation: `npm run typecheck`, `npm run lint`, and `npm run build` passed.
+- Remaining differences: none identified in the focused interaction scope.
+
+final result: passed
+
 ## Golden Dataset Expanded Rating Rubrics - July 21, 2026
 
 - Source visual truth: `C:\Users\Rohan\Downloads\Generated image 1 (4).png`
