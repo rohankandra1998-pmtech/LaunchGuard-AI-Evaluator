@@ -1,5 +1,43 @@
 # Design QA
 
+## Golden Dataset Expanded Rating Rubrics - July 21, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\Generated image 1 (4).png`
+- Desktop unrated state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-desktop-unrated.png`
+- Desktop selected and keyboard-focus state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-desktop-selected.png`
+- Narrow laptop state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-1024.png`
+- Tablet state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-tablet.png`
+- Mobile state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-mobile.png`
+- Tested viewports: 1440 x 900 desktop; 1024 x 768 narrow laptop; 768 x 900 tablet; 390 x 844 mobile.
+
+### Source-reference and visual findings
+
+- The reference replaces four compact criterion cards and hidden definition popovers with a two-column desktop rubric. The implementation now renders each complete Good, Average, and Bad definition inside a vertically stacked, full-row radio target.
+- Desktop computes two equal rubric columns at 1440 px. The grid switches to one column below the `xl` breakpoint, keeping long definitions readable at 1024 px, 768 px, and 390 px without fixed heights, line clamps, ellipses, or horizontal scrolling.
+- Unselected rows retain light green, amber, and red token surfaces and borders. Selected rows use stronger semantic borders and backgrounds; icons and written labels ensure selection is not communicated by color alone.
+- Lucide `ThumbsUp`, the existing 90-degree rotated `ThumbsUp`, and `ThumbsDown` treatments match the established LaunchGuard semantic icon language. No raster icon or new dependency was introduced.
+
+### Interaction and persistence results
+
+- An unrated generated case opened with zero checked radios, the incomplete guidance message, and the disabled `Mark as Reviewed` action.
+- Mixed Good, Average, and Bad selections were exercised across all four live criteria. Completion changed to “All criteria rated. Ready to save.” and enabled the primary action.
+- `Clear Ratings` removed all four local selections, disabled itself and the save action, and restored “Rate all 4 criteria to continue.” without submitting or deleting persisted ratings.
+- The previously reviewed case reopened with all four saved ratings prepopulated and the `Update Review` action visible. Submitting the unchanged saved review completed successfully and displayed “Review updated.”
+- Criteria remain mapped in server-provided sort order. The content-driven grid and card components contain no fixed criterion-count assumptions, so odd counts occupy the final row naturally.
+
+### Accessibility and responsive findings
+
+- Each criterion remains a native `fieldset` with a direct `legend`; every option remains a required radio named `rating_${criterion.id}` with an explicit accessible label containing the rating and complete definition.
+- The complete row is clickable. Keyboard Space selection was exercised on a focused radio, and the selected row displayed the existing two-pixel focus-visible ring with offset.
+- Human Notes remains full width below the rubric. The sticky footer stays in normal document flow, does not cover rubric or notes content, and its actions wrap cleanly on narrow screens.
+- Measured document width equaled client width at 1440, 1024, 768, and 390 px. Mobile criterion width was 301 px and all definition text wrapped naturally. Browser console inspection returned no warnings or errors.
+
+### Remaining differences
+
+- The reference image uses illustrative Nike content and slightly different viewport cropping. The implementation intentionally renders live criterion records and preserves the existing LaunchGuard shell, queue, toolbar, navigation, and data flows.
+
+final result: passed
+
 ## Focused Interaction Polish - July 18, 2026
 
 - Desktop empty-state evidence: `C:\Users\Rohan\.codex\visualizations\2026\07\18\019f7725-e337-7220-97c9-5df81d81113c\variable-drawer-polish-desktop-empty.png`

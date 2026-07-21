@@ -56,17 +56,23 @@ const typeTones: Record<string, "neutral" | "primary" | "average" | "bad" | "goo
 const ratingOptions: Record<RatingLabel, { icon: typeof ThumbsUp; iconClassName?: string; styles: string }> = {
   Good: {
     icon: ThumbsUp,
-    styles: "border-green-200 text-guard-green hover:bg-guard-greenSoft/60 peer-checked:border-guard-green peer-checked:bg-guard-greenSoft peer-checked:shadow-sm"
+    styles: "border-guard-criterionGoodBorder bg-guard-criterionGoodSurface hover:border-green-300 hover:bg-guard-greenSoft/30 peer-checked:border-guard-green peer-checked:bg-guard-greenSoft/70 peer-checked:shadow-sm"
   },
   Average: {
     icon: ThumbsUp,
     iconClassName: "rotate-90",
-    styles: "border-amber-200 text-guard-amber hover:bg-guard-amberSoft/60 peer-checked:border-guard-amber peer-checked:bg-guard-amberSoft peer-checked:shadow-sm"
+    styles: "border-guard-criterionAverageBorder bg-guard-criterionAverageSurface hover:border-amber-300 hover:bg-guard-amberSoft/30 peer-checked:border-guard-amber peer-checked:bg-guard-amberSoft/70 peer-checked:shadow-sm"
   },
   Bad: {
     icon: ThumbsDown,
-    styles: "border-red-200 text-guard-red hover:bg-guard-redSoft/60 peer-checked:border-guard-red peer-checked:bg-guard-redSoft peer-checked:shadow-sm"
+    styles: "border-guard-criterionBadBorder bg-guard-criterionBadSurface hover:border-red-300 hover:bg-guard-redSoft/30 peer-checked:border-guard-red peer-checked:bg-guard-redSoft/70 peer-checked:shadow-sm"
   }
+};
+
+const ratingTextStyles: Record<RatingLabel, string> = {
+  Good: "text-guard-green",
+  Average: "text-guard-amber",
+  Bad: "text-guard-red"
 };
 
 type Toast = { tone: "success" | "error"; message: string } | null;
@@ -530,6 +536,7 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
   const [pending, setPending] = useState(false);
   const [selectedRatings, setSelectedRatings] = useState<Record<string, RatingLabel>>(Object.fromEntries(savedRatings.map((rating) => [rating.criterion_id, rating.rating_label])));
   const complete = criteria.every((criterion) => selectedRatings[criterion.id]);
+  const hasSelectedRatings = Object.keys(selectedRatings).length > 0;
 
   async function submit(formData: FormData) {
     setPending(true);
@@ -546,16 +553,15 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
   return (
     <form action={submit} className="space-y-5">
       <input type="hidden" name="project_id" value={projectId} /><input type="hidden" name="workspace_slug" value={workspaceSlug} /><input type="hidden" name="test_case_id" value={testCase.id} />
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-2">
         {criteria.map((criterion) => (
-          <fieldset key={criterion.id} className="min-w-0 rounded-xl border border-guard-line bg-white p-4">
-            <div className="flex items-start justify-between gap-2"><div><legend className="text-sm font-semibold text-guard-ink">{criterion.name}</legend><p className="mt-1 line-clamp-2 text-xs leading-5 text-guard-muted">{criterion.description}</p></div><details className="relative shrink-0"><summary aria-label={`Show rating definitions for ${criterion.name}`} className="focus-ring cursor-pointer list-none rounded-md p-1 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary"><Info className="h-4 w-4" /></summary><div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-guard-line bg-white p-4 text-xs leading-5 text-guard-text shadow-floating"><p><strong className="text-guard-green">Good:</strong> {criterion.good_definition}</p><p className="mt-2"><strong className="text-guard-amber">Average:</strong> {criterion.average_definition}</p><p className="mt-2"><strong className="text-guard-red">Bad:</strong> {criterion.bad_definition}</p></div></details></div>
-            <div className="mt-4 flex flex-wrap gap-2" role="radiogroup" aria-label={`${criterion.name} rating`}>
-              {(["Good", "Average", "Bad"] as const).map((rating) => {
-                const option = ratingOptions[rating];
-                const RatingIcon = option.icon;
-                return <label key={rating} className="min-w-0 cursor-pointer"><input className="peer sr-only" required type="radio" name={`rating_${criterion.id}`} value={rating} checked={selectedRatings[criterion.id] === rating} onChange={() => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} /><span className={cn("flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-lg border bg-white px-1.5 text-xs font-semibold transition peer-focus-visible:ring-2 peer-focus-visible:ring-guard-primary/70 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white", option.styles)}><RatingIcon aria-hidden="true" className={cn("h-3.5 w-3.5 shrink-0", option.iconClassName)} /><span>{rating}</span></span></label>;
-              })}
+          <fieldset key={criterion.id} className="min-w-0 rounded-xl border border-guard-line bg-white p-4 sm:p-5">
+            <legend className="text-sm font-semibold text-guard-ink">{criterion.name}</legend>
+            <p className="mt-1 text-xs leading-5 text-guard-muted">{criterion.description}</p>
+            <div className="mt-4 space-y-2.5">
+              <RatingDefinitionOption criterion={criterion} rating="Good" selectedRating={selectedRatings[criterion.id]} onSelect={(rating) => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} />
+              <RatingDefinitionOption criterion={criterion} rating="Average" selectedRating={selectedRatings[criterion.id]} onSelect={(rating) => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} />
+              <RatingDefinitionOption criterion={criterion} rating="Bad" selectedRating={selectedRatings[criterion.id]} onSelect={(rating) => setSelectedRatings((current) => ({ ...current, [criterion.id]: rating }))} />
             </div>
           </fieldset>
         ))}
@@ -565,8 +571,43 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
         <Label>Human Notes</Label>
         <TextArea name="human_notes" defaultValue={review?.human_notes || ""} placeholder="Explain what worked, what failed, and why you gave these ratings." maxLength={1000} className="mt-2 min-h-32 w-full" />
       </div>
-      <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-guard-line bg-guard-surfaceMuted px-4 py-3 shadow-card"><p className="text-xs text-guard-muted">{complete ? "All criteria rated. Ready to save." : `Rate all ${criteria.length} criteria to continue.`}</p><button type="submit" disabled={!complete || pending} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{pending ? "Saving review..." : review ? "Update Review" : "Mark as Reviewed"}</button></div>
+      <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-guard-line bg-guard-surfaceMuted/95 px-4 py-3 shadow-card backdrop-blur-sm">
+        <p className="text-xs text-guard-muted">{complete ? "All criteria rated. Ready to save." : `Rate all ${criteria.length} criteria to continue.`}</p>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <button type="button" aria-label="Clear all selected ratings" disabled={!hasSelectedRatings || pending} onClick={() => setSelectedRatings({})} className="focus-ring min-h-10 rounded-lg px-3 text-sm font-semibold text-guard-primaryHover transition hover:bg-white/80 disabled:cursor-not-allowed disabled:text-slate-400">Clear Ratings</button>
+          <button type="submit" disabled={!complete || pending} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{pending ? "Saving review..." : review ? "Update Review" : "Mark as Reviewed"}</button>
+        </div>
+      </div>
     </form>
+  );
+}
+
+function RatingDefinitionOption({ criterion, rating, selectedRating, onSelect }: { criterion: EvaluationCriterion; rating: RatingLabel; selectedRating?: RatingLabel; onSelect: (rating: RatingLabel) => void }) {
+  const option = ratingOptions[rating];
+  const RatingIcon = option.icon;
+  const definition = rating === "Good" ? criterion.good_definition : rating === "Average" ? criterion.average_definition : criterion.bad_definition;
+
+  return (
+    <label className="block min-w-0 cursor-pointer">
+      <input
+        className="peer sr-only"
+        required
+        type="radio"
+        name={`rating_${criterion.id}`}
+        value={rating}
+        aria-label={`${rating}: ${definition}`}
+        checked={selectedRating === rating}
+        onChange={() => onSelect(rating)}
+      />
+      <span className={cn("flex min-h-12 items-start gap-2.5 rounded-lg border px-3 py-2.5 text-xs leading-5 text-guard-text transition peer-focus-visible:ring-2 peer-focus-visible:ring-guard-primary/70 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white sm:gap-3", option.styles)}>
+        <RatingIcon aria-hidden="true" className={cn("mt-0.5 h-4 w-4 shrink-0", ratingTextStyles[rating], option.iconClassName)} />
+        <span className="min-w-0">
+          <span className={cn("font-semibold", ratingTextStyles[rating])}>{rating}</span>
+          <span aria-hidden="true" className="mx-1.5 text-guard-muted">—</span>
+          <span>{definition}</span>
+        </span>
+      </span>
+    </label>
   );
 }
 
