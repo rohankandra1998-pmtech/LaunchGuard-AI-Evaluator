@@ -10,7 +10,7 @@ import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 import { normalizeCriterionName, parseCriterionInput, type SuggestedCriterionInput } from "@/lib/criteria";
 import { generatedTestCasesSchema } from "@/lib/ai/schemas";
-import { fetchAllTestCaseInputs, normalizeTestCaseInput, type GeneratedSuggestion } from "@/lib/test-cases";
+import { fetchAllTestCaseInputs, normalizeTestCaseInput, prepareSuggestionVariableValues, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
@@ -522,7 +522,7 @@ export async function saveTestCase(formData: FormData) {
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
 }
 
-export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, promptVersionId: string, cases: GeneratedSuggestion[]) {
+export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, promptVersionId: string, cases: PreparedGeneratedSuggestion[]) {
   const supabase = await createClient();
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const promptId = assertUuid(promptVersionId, "Prompt version ID");
@@ -535,12 +535,12 @@ export async function saveGeneratedTestCases(workspaceSlug: string, projectId: s
   ]);
   if (promptError) throw promptError;
   if (!prompt) throw new Error("Selected prompt version does not belong to this project.");
-  validateVariableSchema(prompt.variable_schema);
+  const variableSchema = validateVariableSchema(prompt.variable_schema);
   const seen = new Set(existingInputs.map(normalizeTestCaseInput).filter(Boolean));
   const rows: Array<{ project_id: string; user_input: string; case_type: string; variable_values: Record<string, string | number | boolean | null>; status: "draft" }> = [];
   let skippedDuplicateCount = 0;
 
-  for (const testCase of parsedCases.data.test_cases) {
+  for (const [index, testCase] of parsedCases.data.test_cases.entries()) {
     const userInput = testCase.user_input.trim();
     const normalized = normalizeTestCaseInput(userInput);
     if (!normalized) throw new Error("Generated test cases must include a question.");
@@ -553,7 +553,7 @@ export async function saveGeneratedTestCases(workspaceSlug: string, projectId: s
       project_id: projectId,
       user_input: userInput,
       case_type: testCase.case_type,
-      variable_values: {},
+      variable_values: prepareSuggestionVariableValues(variableSchema, cases[index]?.variable_values),
       status: "draft" as const
     });
   }

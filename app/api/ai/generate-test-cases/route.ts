@@ -5,7 +5,7 @@ import { getWorkspaceProject } from "@/lib/data";
 import { runTestCaseStructuredOutput } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 import { validateVariableSchema } from "@/lib/prompt-variables";
-import { fetchAllTestCaseInputs, uniqueGeneratedSuggestions } from "@/lib/test-cases";
+import { fetchAllTestCaseInputs, initialSuggestionVariableValues, uniqueGeneratedSuggestions } from "@/lib/test-cases";
 
 const requestSchema = z.object({
   workspace_slug: z.string().min(1),
@@ -103,7 +103,8 @@ Return structured JSON only.`,
     const postProcessingStart = performance.now();
     const preparedSuggestions = result.test_cases.map((testCase) => ({
       ...testCase,
-      user_input: testCase.user_input.trim()
+      user_input: testCase.user_input.trim(),
+      variable_values: initialSuggestionVariableValues(variableSchema)
     }));
     const testCases = uniqueGeneratedSuggestions(preparedSuggestions, existingTestCaseInputs, 10);
     const postProcessingMs = Math.round(performance.now() - postProcessingStart);

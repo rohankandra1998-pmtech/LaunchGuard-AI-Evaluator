@@ -26,7 +26,7 @@ import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase }
 import { CopyButton } from "@/components/copy-button";
 import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { normalizeTestCaseInput, type GeneratedSuggestion } from "@/lib/test-cases";
+import { normalizeTestCaseInput, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
 import type {
   EvaluationCriterion,
   HumanReview,
@@ -79,9 +79,18 @@ const ratingTextStyles: Record<RatingLabel, string> = {
 
 type Toast = { tone: "success" | "error"; message: string } | null;
 type StarterFilter = "all" | "selected" | "excluded";
-type StarterSuggestion = GeneratedSuggestion & {
+type StarterSuggestion = PreparedGeneratedSuggestion & {
   uiId: string;
   included: boolean;
+  selectedVariableKey: string;
+};
+
+const variableTypeLabels: Record<PromptVariable["type"], string> = {
+  text: "Text",
+  long_text: "Long text",
+  number: "Number",
+  boolean: "Boolean",
+  select: "Select"
 };
 
 function caseTypeLabel(value: string | null) {
@@ -245,10 +254,13 @@ export function DatasetWorkspace({
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Could not generate a starter set.");
       if (!json.test_cases?.length) throw new Error("No unique starter test cases were generated. Try again after updating the prompt or dataset.");
-      setGeneratedSuggestions((json.test_cases as GeneratedSuggestion[]).map((suggestion) => ({
+      const generatedPrompt = promptVersions.find((prompt) => prompt.id === json.prompt_version_id);
+      const initialVariable = generatedPrompt?.variable_schema.find((variable) => variable.required) || generatedPrompt?.variable_schema[0];
+      setGeneratedSuggestions((json.test_cases as PreparedGeneratedSuggestion[]).map((suggestion) => ({
         ...suggestion,
         uiId: window.crypto.randomUUID(),
-        included: true
+        included: true,
+        selectedVariableKey: initialVariable?.key || ""
       })));
       setStarterPromptVersionId(json.prompt_version_id);
       setStarterFilter("all");
@@ -263,7 +275,7 @@ export function DatasetWorkspace({
   async function saveStarterSet() {
     setBusy("save-starter");
     try {
-      const includedSuggestions: GeneratedSuggestion[] = generatedSuggestions.filter((suggestion) => suggestion.included).map(({ user_input, case_type, rationale }) => ({ user_input, case_type, rationale }));
+      const includedSuggestions: PreparedGeneratedSuggestion[] = generatedSuggestions.filter((suggestion) => suggestion.included).map(({ user_input, case_type, variable_values, rationale }) => ({ user_input, case_type, variable_values, rationale }));
       const result = await saveGeneratedTestCases(workspaceSlug, project.id, starterPromptVersionId, includedSuggestions);
       setStarterOpen(false);
       setGeneratedSuggestions([]);
@@ -475,7 +487,7 @@ export function DatasetWorkspace({
           title="Review starter set"
           titleIcon={<Sparkles className="h-5 w-5" />}
           titleMeta={<Badge tone="primary">Prompt v{starterPrompt?.version_number ?? "?"}</Badge>}
-          description={`Review cases generated from Prompt v${starterPrompt?.version_number ?? "?"}. Edit questions before saving; rationales are for review only. Prompt variable values can be added later when editing a saved test case.`}
+          description={`Review cases generated from Prompt v${starterPrompt?.version_number ?? "?"}. Edit questions and variables before saving; rationales are for review only.`}
           onClose={() => setStarterOpen(false)}
           closeDisabled={busy === "save-starter"}
           extraWide
@@ -519,6 +531,7 @@ export function DatasetWorkspace({
                   key={suggestion.uiId}
                   suggestion={suggestion}
                   caseNumber={generatedSuggestions.findIndex((item) => item.uiId === suggestion.uiId) + 1}
+                  schema={starterPrompt?.variable_schema || []}
                   error={starterQuestionErrors[suggestion.uiId]}
                   onChange={(update) => setGeneratedSuggestions((current) => current.map((item) => item.uiId === suggestion.uiId ? { ...item, ...update } : item))}
                   onRemove={() => setGeneratedSuggestions((current) => current.filter((item) => item.uiId !== suggestion.uiId))}
@@ -732,15 +745,21 @@ function CaseEditorDialog({ mode, testCase, projectId, workspaceSlug, prompt, pe
   );
 }
 
-function StarterSuggestionCard({ suggestion, caseNumber, error, onChange, onRemove }: {
+function StarterSuggestionCard({ suggestion, caseNumber, schema, error, onChange, onRemove }: {
   suggestion: StarterSuggestion;
   caseNumber: number;
+  schema: PromptVariable[];
   error?: string | null;
   onChange: (update: Partial<StarterSuggestion>) => void;
   onRemove: () => void;
 }) {
+  const selectedVariable = schema.find((variable) => variable.key === suggestion.selectedVariableKey) || schema[0];
+  const otherVariables = schema.filter((variable) => variable.key !== selectedVariable?.key);
+  const visibleOtherVariables = otherVariables.slice(0, 3);
+  const hiddenVariableCount = Math.max(0, otherVariables.length - visibleOtherVariables.length);
   const questionId = `starter-question-${suggestion.uiId}`;
   const questionErrorId = `starter-question-error-${suggestion.uiId}`;
+  const variableSelectId = `starter-variable-select-${suggestion.uiId}`;
 
   return (
     <article className={cn("rounded-xl border bg-white p-4 transition sm:p-5", suggestion.included ? "border-guard-primaryLine shadow-sm" : "border-guard-line opacity-80")}>
@@ -759,7 +778,7 @@ function StarterSuggestionCard({ suggestion, caseNumber, error, onChange, onRemo
         <button type="button" onClick={onRemove} aria-label={`Remove generated case ${caseNumber}: ${suggestion.user_input || "untitled question"}`} className="focus-ring -mr-1 -mt-1 shrink-0 rounded-md p-2 text-guard-muted hover:bg-guard-surfaceMuted hover:text-guard-red"><X className="h-4 w-4" /></button>
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
+      <div className="mt-4 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,35fr)_minmax(0,45fr)_minmax(9rem,20fr)]">
         <div className="min-w-0">
           <label htmlFor={questionId} className="text-xs font-semibold text-guard-text">Question</label>
           <TextArea id={questionId} value={suggestion.user_input} aria-invalid={Boolean(error)} aria-describedby={error ? questionErrorId : undefined} onChange={(event) => onChange({ user_input: event.target.value })} className={cn("mt-1.5 min-h-24 resize-y", error && "border-guard-red hover:border-guard-red")} />
@@ -767,6 +786,34 @@ function StarterSuggestionCard({ suggestion, caseNumber, error, onChange, onRemo
         </div>
 
         <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="text-xs font-semibold text-guard-text">Prompt variables</p>
+            <span aria-hidden="true" className="text-guard-lineStrong">•</span>
+            <p className="text-xs text-guard-muted">{schema.length} {schema.length === 1 ? "variable" : "variables"} configured</p>
+          </div>
+          {selectedVariable ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <div className="min-w-48 flex-1">
+                  <label htmlFor={variableSelectId} className="text-xs font-semibold text-guard-text">Selected variable<span className="sr-only"> for generated case {caseNumber}</span></label>
+                  <Select id={variableSelectId} value={selectedVariable.key} onChange={(event) => onChange({ selectedVariableKey: event.target.value })} className="mt-1.5">
+                    {schema.map((variable) => <option key={variable.key} value={variable.key}>{variable.label}</option>)}
+                  </Select>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pb-2">
+                  <span className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", selectedVariable.required ? "bg-guard-primarySoft text-guard-primaryHover" : "bg-slate-100 text-guard-muted")}>{selectedVariable.required ? "Required" : "Optional"}</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-guard-muted">{variableTypeLabels[selectedVariable.type]}</span>
+                </div>
+              </div>
+              <div className="mt-2">
+                <VariableField idPrefix={`starter-${suggestion.uiId}`} variable={selectedVariable} value={suggestion.variable_values[selectedVariable.key]} onChange={(value) => onChange({ variable_values: { ...suggestion.variable_values, [selectedVariable.key]: value } })} />
+              </div>
+              {otherVariables.length ? <div className="mt-2.5 flex flex-wrap gap-1.5" aria-label="Other prompt variables">{visibleOtherVariables.map((variable) => <button key={variable.key} type="button" onClick={() => onChange({ selectedVariableKey: variable.key })} className="focus-ring rounded-full border border-guard-line bg-guard-surfaceMuted px-2.5 py-1 text-[10px] font-medium text-guard-muted hover:border-guard-primaryLine hover:text-guard-primaryHover">{variable.label}</button>)}{hiddenVariableCount ? <span className="rounded-full border border-guard-line bg-guard-surfaceMuted px-2.5 py-1 text-[10px] font-medium text-guard-muted">+{hiddenVariableCount} more</span> : null}</div> : null}
+            </>
+          ) : <p className="mt-2 text-xs text-guard-muted">No variables configured for this prompt.</p>}
+        </div>
+
+        <div className="min-w-0 lg:pt-6">
           <p className="text-xs font-semibold text-guard-text">Why suggested</p>
           <div className="mt-2 flex items-start gap-2 text-xs leading-5 text-guard-muted"><Lightbulb aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-guard-primary" /><p>{suggestion.rationale}</p></div>
         </div>
