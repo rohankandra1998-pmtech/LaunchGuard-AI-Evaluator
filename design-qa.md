@@ -1,5 +1,17 @@
 # Design QA
 
+## Review Panel Copy and Clear-Rating Polish - July 21, 2026
+
+- Scope: icon-only contextual copy controls in the Review Panel and stable criterion headers when the local Clear rating action appears.
+- Copy controls: User Input and AI Output render as 40 x 40 px icon-only buttons with contextual accessible names, empty visible labels, reserved content padding, and subtle purple and green idle treatments respectively. Both changed to the shared green success state, copied the exact displayed values, and reset to their idle accessible names after the existing two-second timer.
+- Shared-component regression: the Prompt Version Builder continues to render the default labeled `Copy` control. The shared clipboard fallback, failed state, disabled treatment, focus ring, title tooltip, and live announcements remain unchanged.
+- Rating interaction: selecting a rating produced identical criterion-card, title, and description dimensions before and after the 32 px Clear rating action appeared. Clearing Policy-grounded accuracy left Helpful task completion selected; the global Clear Ratings action then removed every remaining local selection.
+- Responsive and accessibility: at 390 x 844, both copy buttons remained inside their content surfaces, measured 40 x 40 px, did not overlap content, and introduced no horizontal overflow. Native required radio inputs and criterion-specific Clear rating labels remain intact.
+- Browser console: the isolated validation runtime reported no warnings or errors.
+- Validation: `npm run typecheck` and `npm run lint` passed.
+
+final result: passed
+
 ## Golden Dataset Review Interaction Refinement - July 21, 2026
 
 - Scope: criterion-level local rating clearing and shared labeled Copy buttons inside User Input and AI Output surfaces.

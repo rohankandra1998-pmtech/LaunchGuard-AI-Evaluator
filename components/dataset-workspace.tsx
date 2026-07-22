@@ -499,8 +499,8 @@ function ReviewPanel({
       <div className="space-y-5 p-5">
         <div>
           <h3 className="mb-2 text-sm font-semibold text-guard-ink">User Input</h3>
-          <div className="relative rounded-xl border border-guard-primaryLine/70 bg-guard-surfaceMuted px-4 py-3 pr-28 text-sm leading-6 text-guard-ink sm:pr-32">
-            <CopyButton text={selected.user_input} contextLabel="user input" className="absolute right-3 top-3" />
+          <div className="relative rounded-xl border border-guard-primaryLine/70 bg-guard-surfaceMuted px-4 py-3 pr-16 text-sm leading-6 text-guard-ink">
+            <CopyButton text={selected.user_input} contextLabel="user input" iconOnly className="absolute right-3 top-1/2 -translate-y-1/2" />
             {selected.user_input}
           </div>
         </div>
@@ -508,8 +508,8 @@ function ReviewPanel({
         {hasOutput ? (
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-guard-ink">AI Output</h3><Badge tone="neutral">{selected.model_used || "Model unknown"}</Badge><Badge tone="primary">{prompt ? `v${prompt.version_number}` : "Prompt unknown"}</Badge><span className="text-xs font-medium text-guard-green">{selected.status === "reviewed" ? "Reviewed" : "Output ready"}</span></div>
-            <div className="relative whitespace-pre-wrap rounded-xl border border-green-100 bg-green-50/60 px-4 py-4 pr-28 text-sm leading-7 text-guard-ink sm:pr-32">
-              <CopyButton text={selected.generated_ai_output || ""} contextLabel="AI output" className="absolute right-3 top-3" />
+            <div className="relative whitespace-pre-wrap rounded-xl border border-green-100 bg-green-50/60 px-4 py-4 pr-16 text-sm leading-7 text-guard-ink">
+              <CopyButton text={selected.generated_ai_output || ""} contextLabel="AI output" iconOnly tone="green" className="absolute right-3 top-3" />
               {selected.generated_ai_output}
             </div>
           </div>
@@ -568,9 +568,9 @@ function ReviewForm({ workspaceSlug, projectId, testCase, criteria, review, save
         {criteria.map((criterion) => (
           <fieldset key={criterion.id} className="min-w-0 rounded-xl border border-guard-line bg-white p-4 sm:p-5">
             <legend className="sr-only">{criterion.name}</legend>
-            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-              <h3 className="min-w-0 flex-1 text-sm font-semibold text-guard-ink">{criterion.name}</h3>
-              {selectedRatings[criterion.id] ? <button type="button" disabled={pending} onClick={() => clearCriterionRating(criterion.id)} aria-label={`Clear rating for ${criterion.name}`} className="focus-ring min-h-10 shrink-0 rounded-lg px-2.5 py-2 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:text-slate-400">Clear rating</button> : null}
+            <div className="relative min-h-8">
+              <h3 className="min-w-0 pr-24 text-sm font-semibold leading-5 text-guard-ink">{criterion.name}</h3>
+              {selectedRatings[criterion.id] ? <button type="button" disabled={pending} onClick={() => clearCriterionRating(criterion.id)} aria-label={`Clear rating for ${criterion.name}`} className="focus-ring absolute -top-2 right-0 inline-flex h-8 items-center rounded-lg px-2 text-xs font-semibold text-guard-primary transition hover:bg-guard-primarySoft hover:text-guard-primaryHover disabled:cursor-not-allowed disabled:text-slate-400">Clear Rating</button> : null}
             </div>
             <p className="mt-1 text-xs leading-5 text-guard-muted">{criterion.description}</p>
             <div className="mt-4 space-y-2.5">
