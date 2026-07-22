@@ -25,6 +25,7 @@ import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase }
 import { CopyButton } from "@/components/copy-button";
 import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { normalizeTestCaseInput, type GeneratedSuggestion } from "@/lib/test-cases";
 import type {
   EvaluationCriterion,
   HumanReview,
@@ -76,7 +77,6 @@ const ratingTextStyles: Record<RatingLabel, string> = {
 };
 
 type Toast = { tone: "success" | "error"; message: string } | null;
-type GeneratedSuggestion = Record<string, unknown>;
 
 function caseTypeLabel(value: string | null) {
   return (value || "normal").split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
@@ -128,6 +128,7 @@ export function DatasetWorkspace({
   const [caseDialog, setCaseDialog] = useState<{ mode: "add" | "edit"; testCase: TestCase | null } | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<TestCase | null>(null);
   const [generatedSuggestions, setGeneratedSuggestions] = useState<GeneratedSuggestion[]>([]);
+  const [starterPromptVersionId, setStarterPromptVersionId] = useState("");
   const [starterOpen, setStarterOpen] = useState(false);
 
   const visibleCases = useMemo(() => {
@@ -143,6 +144,23 @@ export function DatasetWorkspace({
   const pageCases = visibleCases.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedCase = visibleCases.find((testCase) => testCase.id === selectedCaseId) || null;
   const selectedIndex = selectedCase ? visibleCases.findIndex((testCase) => testCase.id === selectedCase.id) : -1;
+  const starterPrompt = promptVersions.find((prompt) => prompt.id === starterPromptVersionId);
+  const starterQuestionErrors = useMemo(() => {
+    const existing = new Set(testCases.map((testCase) => normalizeTestCaseInput(testCase.user_input)).filter(Boolean));
+    const normalized = generatedSuggestions.map((suggestion) => normalizeTestCaseInput(suggestion.user_input));
+    const counts = normalized.reduce((result, value) => {
+      if (value) result.set(value, (result.get(value) || 0) + 1);
+      return result;
+    }, new Map<string, number>());
+
+    return normalized.map((value) => {
+      if (!value) return "Enter a question before saving.";
+      if (existing.has(value)) return "This question already exists in the Golden Dataset.";
+      if ((counts.get(value) || 0) > 1) return "This duplicates another generated question.";
+      return null;
+    });
+  }, [generatedSuggestions, testCases]);
+  const starterHasBlockingErrors = !generatedSuggestions.length || starterQuestionErrors.some(Boolean);
 
   useEffect(() => {
     setPage((current) => Math.min(current, pageCount));
@@ -210,11 +228,13 @@ export function DatasetWorkspace({
       const response = await fetch("/api/ai/generate-test-cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id, prompt_version_id: promptVersionId })
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Could not generate a starter set.");
-      setGeneratedSuggestions(json.test_cases || []);
+      if (!json.test_cases?.length) throw new Error("No unique starter test cases were generated. Try again after updating the prompt or dataset.");
+      setGeneratedSuggestions(json.test_cases);
+      setStarterPromptVersionId(json.prompt_version_id);
       setStarterOpen(true);
     } catch (error) {
       setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not generate a starter set." });
@@ -226,10 +246,16 @@ export function DatasetWorkspace({
   async function saveStarterSet() {
     setBusy("save-starter");
     try {
-      await saveGeneratedTestCases(workspaceSlug, project.id, generatedSuggestions);
+      const result = await saveGeneratedTestCases(workspaceSlug, project.id, starterPromptVersionId, generatedSuggestions);
       setStarterOpen(false);
       setGeneratedSuggestions([]);
-      setToast({ tone: "success", message: `${generatedSuggestions.length} generated test cases added to Golden Dataset.` });
+      setStarterPromptVersionId("");
+      setToast({
+        tone: "success",
+        message: result.skippedDuplicateCount
+          ? `${result.insertedCount} test ${result.insertedCount === 1 ? "case" : "cases"} added. ${result.skippedDuplicateCount} ${result.skippedDuplicateCount === 1 ? "duplicate was" : "duplicates were"} skipped.`
+          : `${result.insertedCount} test ${result.insertedCount === 1 ? "case" : "cases"} added to Golden Dataset.`
+      });
       router.refresh();
     } catch (error) {
       setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not save generated cases." });
@@ -304,7 +330,7 @@ export function DatasetWorkspace({
               {supportedModels.map((supportedModel) => <option key={supportedModel} value={supportedModel}>{supportedModel}</option>)}
             </Select>
           </div>
-          <button type="button" onClick={generateStarterSet} disabled={busy !== null || !activePrompt} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3.5 text-sm font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:border-guard-line disabled:text-slate-400">
+          <button type="button" onClick={generateStarterSet} disabled={busy !== null || !promptVersionId} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3.5 text-sm font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:border-guard-line disabled:text-slate-400">
             {busy === "starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate Starter Set
           </button>
           <button type="button" onClick={() => runCases(selectedIds)} disabled={busy !== null || !selectedIds.length || !promptVersionId || !model} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-guard-primary px-4 text-sm font-semibold text-white transition hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">
@@ -426,18 +452,35 @@ export function DatasetWorkspace({
       ) : null}
 
       {starterOpen ? (
-        <Modal title="Review starter set" description="Review the AI-generated cases before adding them to Golden Dataset. Nothing is saved until you confirm." onClose={() => setStarterOpen(false)} wide>
-          <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+        <Modal title="Review starter set" description={`Review cases generated from Prompt v${starterPrompt?.version_number ?? "?"}. Edit questions and variables before saving; rationales are for review only.`} onClose={() => setStarterOpen(false)} closeDisabled={busy === "save-starter"} extraWide>
+          <div className="space-y-4">
             {generatedSuggestions.map((suggestion, index) => (
-              <div key={index} className="flex items-start gap-3 rounded-xl border border-guard-line bg-guard-surfaceMuted p-4">
-                <div className="min-w-0 flex-1"><Badge tone={typeTones[String(suggestion.case_type || "normal")] || "neutral"}>{caseTypeLabel(String(suggestion.case_type || "normal"))}</Badge><p className="mt-2 text-sm leading-6 text-guard-ink">{String(suggestion.user_input || "")}</p></div>
-                <button type="button" onClick={() => setGeneratedSuggestions((current) => current.filter((_, suggestionIndex) => suggestionIndex !== index))} aria-label={`Remove generated case ${index + 1}`} className="focus-ring rounded-md p-2 text-guard-muted hover:bg-white hover:text-guard-red"><X className="h-4 w-4" /></button>
+              <div key={`${index}-${suggestion.case_type}`} className="rounded-xl border border-guard-line bg-guard-surfaceMuted p-4 sm:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <Badge tone={typeTones[suggestion.case_type] || "neutral"}>{caseTypeLabel(suggestion.case_type)}</Badge>
+                  <button type="button" onClick={() => setGeneratedSuggestions((current) => current.filter((_, suggestionIndex) => suggestionIndex !== index))} aria-label={`Remove generated case ${index + 1}: ${suggestion.user_input || "untitled question"}`} className="focus-ring shrink-0 rounded-md p-2 text-guard-muted hover:bg-white hover:text-guard-red"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="mt-4">
+                  <label htmlFor={`starter-question-${index}`} className="text-sm font-medium text-guard-text">Question {index + 1}</label>
+                  <TextArea id={`starter-question-${index}`} value={suggestion.user_input} aria-invalid={Boolean(starterQuestionErrors[index])} aria-describedby={starterQuestionErrors[index] ? `starter-question-error-${index}` : undefined} onChange={(event) => setGeneratedSuggestions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, user_input: event.target.value } : item))} className={cn("mt-2 min-h-24", starterQuestionErrors[index] && "border-guard-red hover:border-guard-red")} />
+                  {starterQuestionErrors[index] ? <p id={`starter-question-error-${index}`} role="alert" className="mt-1.5 text-xs text-guard-red">{starterQuestionErrors[index]}</p> : null}
+                </div>
+                {starterPrompt?.variable_schema.length ? (
+                  <fieldset className="mt-4 rounded-lg border border-guard-line bg-white p-4">
+                    <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-guard-muted">Prompt variables</legend>
+                    <div className="grid gap-4 sm:grid-cols-2">{starterPrompt.variable_schema.map((variable) => <VariableField key={variable.key} idPrefix={`starter-${index}`} variable={variable} value={suggestion.variable_values[variable.key]} onChange={(value) => setGeneratedSuggestions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, variable_values: { ...item.variable_values, [variable.key]: value } } : item))} />)}</div>
+                  </fieldset>
+                ) : null}
+                <div className="mt-4 rounded-lg border border-guard-line bg-white/70 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-guard-muted">Why suggested</p>
+                  <p className="mt-1 text-xs leading-5 text-guard-muted">{suggestion.rationale}</p>
+                </div>
               </div>
             ))}
           </div>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-guard-line pt-5">
-            <p className="text-sm text-guard-muted">{generatedSuggestions.length} cases selected</p>
-            <div className="flex gap-3"><button type="button" onClick={() => setStarterOpen(false)} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">Cancel</button><button type="button" onClick={saveStarterSet} disabled={!generatedSuggestions.length || busy === "save-starter"} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">{busy === "save-starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Save to Golden Dataset</button></div>
+            <p className={cn("text-sm", starterHasBlockingErrors ? "text-guard-red" : "text-guard-muted")}>{starterHasBlockingErrors ? "Resolve empty or duplicate questions before saving." : `${generatedSuggestions.length} cases ready to save`}</p>
+            <div className="flex w-full flex-col-reverse gap-3 sm:w-auto sm:flex-row"><button type="button" onClick={() => setStarterOpen(false)} disabled={busy === "save-starter"} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">Cancel</button><button type="button" onClick={saveStarterSet} disabled={starterHasBlockingErrors || busy === "save-starter"} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300">{busy === "save-starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Save to Golden Dataset</button></div>
           </div>
         </Modal>
       ) : null}
@@ -645,18 +688,18 @@ function CaseEditorDialog({ mode, testCase, projectId, workspaceSlug, prompt, pe
   );
 }
 
-function VariableField({ variable, value, onChange }: { variable: PromptVariable; value: string | number | boolean | null; onChange: (value: string | number | boolean | null) => void }) {
-  const inputId = `test-case-variable-${variable.key}`;
-  return <div className={variable.type === "long_text" ? "sm:col-span-2" : ""}><label htmlFor={inputId} className="text-sm font-medium text-guard-text">{variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}</label>{variable.type === "long_text" ? <TextArea id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24" /> : variable.type === "boolean" ? <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select> : variable.type === "select" ? <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select> : <TextInput id={inputId} type={variable.type === "number" ? "number" : "text"} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2" />}{variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}</div>;
+function VariableField({ variable, value, onChange, idPrefix = "test-case-variable" }: { variable: PromptVariable; value: string | number | boolean | null; onChange: (value: string | number | boolean | null) => void; idPrefix?: string }) {
+  const inputId = `${idPrefix}-${variable.key}`;
+  return <div className={variable.type === "long_text" ? "sm:col-span-2" : ""}><label htmlFor={inputId} className="text-sm font-medium text-guard-text">{variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}</label>{variable.type === "long_text" ? <TextArea id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24" /> : variable.type === "boolean" ? <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select> : variable.type === "select" ? <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select> : <TextInput id={inputId} type={variable.type === "number" ? "number" : "text"} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(variable.type === "number" ? event.target.value === "" ? null : Number(event.target.value) : event.target.value)} className="mt-2" />}{variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}</div>;
 }
 
 
-function Modal({ title, description, onClose, children, wide = false }: { title: string; description: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+function Modal({ title, description, onClose, children, wide = false, extraWide = false, closeDisabled = false }: { title: string; description: string; onClose: () => void; children: React.ReactNode; wide?: boolean; extraWide?: boolean; closeDisabled?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
     return () => { if (dialog?.open) dialog.close(); };
   }, []);
-  return <dialog ref={ref} aria-labelledby="workspace-dialog-title" aria-describedby="workspace-dialog-description" onCancel={(event) => { event.preventDefault(); onClose(); }} className={cn("m-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-guard-line bg-white p-0 text-guard-text shadow-floating backdrop:bg-slate-950/25", wide ? "max-w-3xl" : "max-w-lg")}><div className="flex max-h-[90dvh] flex-col"><header className="flex items-start justify-between gap-4 border-b border-guard-line px-5 py-5 sm:px-6"><div><h2 id="workspace-dialog-title" className="text-xl font-semibold tracking-tight text-guard-ink">{title}</h2><p id="workspace-dialog-description" className="mt-1 text-sm leading-6 text-guard-muted">{description}</p></div><button type="button" onClick={onClose} aria-label="Close dialog" className="focus-ring rounded-lg p-2 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div></div></dialog>;
+  return <dialog ref={ref} aria-labelledby="workspace-dialog-title" aria-describedby="workspace-dialog-description" onCancel={(event) => { event.preventDefault(); if (!closeDisabled) onClose(); }} className={cn("m-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-guard-line bg-white p-0 text-guard-text shadow-floating backdrop:bg-slate-950/25", extraWide ? "max-w-5xl" : wide ? "max-w-3xl" : "max-w-lg")}><div className="flex max-h-[90dvh] flex-col"><header className="flex items-start justify-between gap-4 border-b border-guard-line px-5 py-5 sm:px-6"><div><h2 id="workspace-dialog-title" className="text-xl font-semibold tracking-tight text-guard-ink">{title}</h2><p id="workspace-dialog-description" className="mt-1 text-sm leading-6 text-guard-muted">{description}</p></div><button type="button" onClick={onClose} disabled={closeDisabled} aria-label="Close dialog" className="focus-ring rounded-lg p-2 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary disabled:cursor-not-allowed disabled:opacity-40"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div></div></dialog>;
 }

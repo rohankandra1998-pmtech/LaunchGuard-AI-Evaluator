@@ -9,6 +9,8 @@ import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 import { normalizeCriterionName, parseCriterionInput, type SuggestedCriterionInput } from "@/lib/criteria";
+import { generatedTestCasesSchema } from "@/lib/ai/schemas";
+import { fetchAllTestCaseInputs, normalizeTestCaseInput, prepareSuggestionVariableValues, type GeneratedSuggestion } from "@/lib/test-cases";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
@@ -506,7 +508,7 @@ export async function saveTestCase(formData: FormData) {
         .eq("project_id", projectId)
         .select("id")
         .maybeSingle()
-    : await supabase.from("test_cases").insert({ ...payload, expected_answer: null }).select("id").single();
+    : await supabase.from("test_cases").insert(payload).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Test case does not belong to this project.");
   if (testCaseId) {
@@ -520,26 +522,47 @@ export async function saveTestCase(formData: FormData) {
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
 }
 
-export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, cases: Array<Record<string, unknown>>) {
+export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, promptVersionId: string, cases: GeneratedSuggestion[]) {
   const supabase = await createClient();
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
-  if (!cases.length) throw new Error("No generated test cases were supplied.");
-  const rows = cases.map((testCase) => {
-    const caseType = String(testCase.case_type || "normal");
-    if (!caseTypes.has(caseType)) throw new Error("Generated test case contains an unsupported case type.");
-    return {
+  const promptId = assertUuid(promptVersionId, "Prompt version ID");
+  const parsedCases = generatedTestCasesSchema.safeParse({ test_cases: cases });
+  if (!parsedCases.success || !parsedCases.data.test_cases.length) throw new Error("No valid generated test cases were supplied.");
+
+  const [{ data: prompt, error: promptError }, existingInputs] = await Promise.all([
+    supabase.from("prompt_versions").select("variable_schema").eq("id", promptId).eq("project_id", projectId).maybeSingle(),
+    fetchAllTestCaseInputs(supabase, projectId)
+  ]);
+  if (promptError) throw promptError;
+  if (!prompt) throw new Error("Selected prompt version does not belong to this project.");
+  const variableSchema = validateVariableSchema(prompt.variable_schema);
+  const seen = new Set(existingInputs.map(normalizeTestCaseInput).filter(Boolean));
+  const rows: Array<{ project_id: string; user_input: string; case_type: string; variable_values: Record<string, string | number | boolean | null>; status: "draft" }> = [];
+  let skippedDuplicateCount = 0;
+
+  for (const testCase of parsedCases.data.test_cases) {
+    const userInput = testCase.user_input.trim();
+    const normalized = normalizeTestCaseInput(userInput);
+    if (!normalized) throw new Error("Generated test cases must include a question.");
+    if (seen.has(normalized)) {
+      skippedDuplicateCount += 1;
+      continue;
+    }
+    seen.add(normalized);
+    rows.push({
       project_id: projectId,
-      user_input: String(testCase.user_input || "").trim(),
-      case_type: caseType,
-      variable_values: testCase.variable_values || {},
-      expected_answer: testCase.expected_answer ? String(testCase.expected_answer) : null,
-      status: "draft"
-    };
-  });
-  if (rows.some((row) => !row.user_input)) throw new Error("Generated test cases must include user input.");
+      user_input: userInput,
+      case_type: testCase.case_type,
+      variable_values: prepareSuggestionVariableValues(variableSchema, testCase.variable_values),
+      status: "draft" as const
+    });
+  }
+
+  if (!rows.length) throw new Error("No unique test cases remain to save. Remove or edit the duplicates and try again.");
   const { error } = await supabase.from("test_cases").insert(rows);
   if (error) throw error;
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
+  return { insertedCount: rows.length, skippedDuplicateCount };
 }
 
 export async function deleteTestCase(formData: FormData) {

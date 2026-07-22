@@ -71,7 +71,6 @@ export type TestCase = {
   user_input: string;
   case_type: CaseType | null;
   variable_values: Record<string, string | number | boolean | null>;
-  expected_answer: string | null;
   generated_ai_output: string | null;
   prompt_version_id: string | null;
   model_used: string | null;

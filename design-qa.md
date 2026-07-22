@@ -1,5 +1,19 @@
 # Design QA
 
+## AI-Generated Starter Test Cases - July 21, 2026
+
+- Scope: selected-prompt generation, schema-aware editable suggestions, duplicate prevention, accurate saves, and removal of the legacy `expected_answer` runtime contract.
+- Prompt fidelity: live generation succeeded for prompt v1 and prompt v2 using their exact IDs. Each response returned 10 suggestions and the modal displayed the matching prompt version, variable fields, typed values, defaults/context, case-type badges, and rationale.
+- Duplicate protection: generated results are normalized and filtered against the complete project dataset and against one another. Editing a question to match an existing row or another suggestion produced an inline warning and disabled save. The server repeats normalization and duplicate filtering immediately before insertion and reports inserted and skipped counts.
+- Editing and save behavior: question text and every generated variable value are editable before saving; individual suggestions can be removed; empty or duplicate questions cannot be submitted. The persistence path was source- and build-validated to insert draft rows only, omit rationale, and return actual insert/skip counts. Live QA intentionally cancelled instead of writing generated test data to the shared prototype dataset.
+- Prompt ownership: a well-formed prompt ID outside the requested project returned HTTP 404 before generation.
+- Legacy contract: `expected_answer` was removed from application types, manual/generated inserts, CSV export, and seed behavior. The nullable legacy database column remains untouched, avoiding a destructive migration.
+- Responsive and accessibility: at 390 x 844 the 10-card modal remained vertically scrollable with no dialog-level horizontal overflow; question labels, inline error associations, remove labels, and footer actions remained available. Desktop and mobile cancellation preserved the existing two-row queue.
+- Browser console: no warnings or errors remained after the final v1/v2 and mobile runs.
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed.
+
+final result: passed
+
 ## Review Panel Copy and Clear-Rating Polish - July 21, 2026
 
 - Scope: icon-only contextual copy controls in the Review Panel and stable criterion headers when the local Clear rating action appears.
