@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generatedTestCasesSchemaForVariables } from "@/lib/ai/schemas";
+import { generatedTestCasesSchema } from "@/lib/ai/schemas";
 import { getWorkspaceProject } from "@/lib/data";
 import { runTestCaseStructuredOutput } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 import { validateVariableSchema } from "@/lib/prompt-variables";
-import { fetchAllTestCaseInputs, prepareSuggestionVariableValues, uniqueGeneratedSuggestions } from "@/lib/test-cases";
+import { fetchAllTestCaseInputs, uniqueGeneratedSuggestions } from "@/lib/test-cases";
 
 const requestSchema = z.object({
   workspace_slug: z.string().min(1),
@@ -60,19 +60,19 @@ export async function POST(request: Request) {
     const openAIRequestStart = performance.now();
     const generationResult = await runTestCaseStructuredOutput({
       schemaName: "generated_test_cases",
-      schema: generatedTestCasesSchemaForVariables(variableSchema),
+      schema: generatedTestCasesSchema,
       instructions:
         `You generate high-quality test cases for evaluating an AI application.
 
-Generate exactly 10 realistic and meaningfully distinct test cases when possible, and never return more than 10.
+Generate exactly 10 focused, concise, realistic, and meaningfully distinct test questions when possible, and never return more than 10.
 
 Use the supplied project, selected prompt version, selected variable schema, evaluation criteria, and existing Golden Dataset inputs as context.
 
 Cover a useful mix of normal, edge, ambiguous, missing_context, adversarial, and tone_sensitive cases. Do not force low-quality cases merely to satisfy equal distribution.
 
-The complete variable schema is contextual information. Consider each variable's key, label, description, type, required status, configured options, and default_value when constructing realistic test cases. Default values provide additional product context; they are not mandatory values that must be copied into every test case.
+The complete variable schema is contextual information only. Use each variable's key, label, description, type, required status, configured options, and default_value to understand the application and suggest relevant questions.
 
-variable_values may contain only keys defined in the selected variable schema. Values must respect their configured types and select options.
+Do not generate variable values or include variable_values in the response.
 
 Do not reproduce, lightly reword, or create semantic duplicates of any existing Golden Dataset input. Do not create duplicates within the generated set.
 
@@ -103,8 +103,7 @@ Return structured JSON only.`,
     const postProcessingStart = performance.now();
     const preparedSuggestions = result.test_cases.map((testCase) => ({
       ...testCase,
-      user_input: testCase.user_input.trim(),
-      variable_values: prepareSuggestionVariableValues(variableSchema, testCase.variable_values)
+      user_input: testCase.user_input.trim()
     }));
     const testCases = uniqueGeneratedSuggestions(preparedSuggestions, existingTestCaseInputs, 10);
     const postProcessingMs = Math.round(performance.now() - postProcessingStart);

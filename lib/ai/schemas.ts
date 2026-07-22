@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { criterionFieldLimits } from "@/lib/criteria";
-import type { PromptVariable } from "@/lib/types";
 
 export const suggestedCriterionSchema = z.object({
   name: z.string().max(criterionFieldLimits.name),
@@ -18,9 +17,8 @@ export const suggestedCriteriaSchema = z.object({
 export const GENERATED_TEST_CASE_RATIONALE_MAX_LENGTH = 180;
 
 export const generatedTestCaseSchema = z.object({
-  user_input: z.string().min(1),
+  user_input: z.string().min(1).max(500),
   case_type: z.enum(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]),
-  variable_values: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
   rationale: z
     .string()
     .min(1)
@@ -30,14 +28,6 @@ export const generatedTestCaseSchema = z.object({
 export const generatedTestCasesSchema = z.object({
   test_cases: z.array(generatedTestCaseSchema).max(10)
 });
-
-export function generatedTestCasesSchemaForVariables(variables: PromptVariable[]) {
-  const variableValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-  const variableShape = Object.fromEntries(variables.map((variable) => [variable.key, variableValueSchema]));
-  return z.object({
-    test_cases: z.array(generatedTestCaseSchema.extend({ variable_values: z.object(variableShape) })).max(10)
-  });
-}
 
 export const errorAnalysisSchema = z.object({
   top_failure_patterns: z.array(z.string()),
