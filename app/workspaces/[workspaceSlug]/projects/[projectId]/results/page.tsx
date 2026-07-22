@@ -18,8 +18,6 @@ export default async function ResultsPage({ params }: { params: Promise<{ worksp
   const projectRatings = ratings || [];
   const avg = projectRatings.length ? (projectRatings.reduce((sum, rating) => sum + rating.rating_score, 0) / projectRatings.length).toFixed(2) : "N/A";
   const ratingDist = countBy(projectRatings.map((rating) => rating.rating_label));
-  const severityDist = countBy((reviews || []).map((review) => review.severity || "None"));
-  const failureDist = countBy((reviews || []).map((review) => review.failure_category || "None"));
   const criterionScores = (criteria || []).map((criterion) => {
     const rows = projectRatings.filter((rating) => rating.criterion_id === criterion.id);
     return { criterion, average: rows.length ? rows.reduce((sum, row) => sum + row.rating_score, 0) / rows.length : 0, count: rows.length };
@@ -33,12 +31,12 @@ export default async function ResultsPage({ params }: { params: Promise<{ worksp
 
   return (
     <div>
-      <PageHeader eyebrow="Launch readiness" title="Results Dashboard">Calculate human scores, rating distribution, severity spread, weakest criteria, and worst-performing test cases.</PageHeader>
+      <PageHeader eyebrow="Launch readiness" title="Results Dashboard">Calculate human scores, rating distribution, weakest criteria, and worst-performing test cases.</PageHeader>
       <div className="grid gap-4 md:grid-cols-4"><StatCard label="Total test cases" value={testCases?.length || 0} /><StatCard label="Reviewed test cases" value={reviews?.length || 0} /><StatCard label="Average human score" value={avg} /><StatCard label="Weakest criteria" value={criterionScores.filter((row) => row.count).length ? criterionScores[0].criterion.name : "N/A"} /></div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-3"><Card><h2 className="text-lg font-semibold text-guard-ink">Good / Average / Bad</h2><Distribution data={ratingDist} /></Card><Card><h2 className="text-lg font-semibold text-guard-ink">Severity distribution</h2><Distribution data={severityDist} /></Card><Card><h2 className="text-lg font-semibold text-guard-ink">Failure categories</h2><Distribution data={failureDist} /></Card></div>
+      <div className="mt-8"><Card><h2 className="text-lg font-semibold text-guard-ink">Good / Average / Bad</h2><Distribution data={ratingDist} /></Card></div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card><h2 className="text-lg font-semibold text-guard-ink">Score by criterion</h2><div className="mt-4 space-y-3">{criterionScores.length ? criterionScores.map(({ criterion, average, count }) => <div key={criterion.id}><div className="mb-1 flex justify-between text-sm"><span>{criterion.name}</span><span>{count ? average.toFixed(2) : "No ratings"}</span></div><div className="h-2 rounded-full bg-guard-surfaceStrong"><div className="h-2 rounded-full bg-guard-primary" style={{ width: `${Math.min(100, (average / 3) * 100)}%` }} /></div></div>) : <EmptyState title="No criteria">Add criteria and review outputs to calculate scores.</EmptyState>}</div></Card>
-        <Card><h2 className="text-lg font-semibold text-guard-ink">Worst-performing test cases</h2><div className="mt-4 space-y-3">{worstCases.length ? worstCases.map(({ testCase, review, average }) => <div key={testCase.id} className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-4"><div className="flex items-center justify-between gap-3"><p className="line-clamp-2 text-sm text-guard-ink">{testCase.user_input}</p><Badge tone={average >= 2.5 ? "good" : average >= 1.7 ? "average" : "bad"}>{average.toFixed(2)}</Badge></div><p className="mt-2 text-xs text-guard-muted">{review.failure_category || "No category"} / {review.severity || "No severity"}</p></div>) : <EmptyState title="No reviewed cases">Complete Human Review to populate worst-performing cases.</EmptyState>}</div></Card>
+        <Card><h2 className="text-lg font-semibold text-guard-ink">Worst-performing test cases</h2><div className="mt-4 space-y-3">{worstCases.length ? worstCases.map(({ testCase, review, average }) => <div key={testCase.id} className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-4"><div className="flex items-center justify-between gap-3"><p className="line-clamp-2 text-sm text-guard-ink">{testCase.user_input}</p><Badge tone={average >= 2.5 ? "good" : average >= 1.7 ? "average" : "bad"}>{average.toFixed(2)}</Badge></div>{review.human_notes ? <p className="mt-2 line-clamp-2 text-xs text-guard-muted">{review.human_notes}</p> : null}</div>) : <EmptyState title="No reviewed cases">Review AI outputs in Golden Dataset to populate worst-performing cases.</EmptyState>}</div></Card>
       </div>
     </div>
   );

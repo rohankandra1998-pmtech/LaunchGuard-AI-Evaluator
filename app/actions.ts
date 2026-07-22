@@ -9,6 +9,8 @@ import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 import { normalizeCriterionName, parseCriterionInput, type SuggestedCriterionInput } from "@/lib/criteria";
+import { generatedTestCasesSchema } from "@/lib/ai/schemas";
+import { fetchAllTestCaseInputs, normalizeTestCaseInput, prepareSuggestionVariableValues, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
 
@@ -30,18 +32,6 @@ function workspaceProjectFields(formData: FormData) {
 function validateModel(value: string) {
   if (![getProductModel(), getReasoningModel()].includes(value)) throw new Error("Unsupported model.");
   return value;
-}
-
-async function assertRelatedRecord(
-  table: string,
-  id: string,
-  projectId: string,
-  label: string
-) {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from(table).select("id").eq("id", assertUuid(id, `${label} ID`)).eq("project_id", projectId).maybeSingle();
-  if (error) throw error;
-  if (!data) throw new Error(`${label} does not belong to this project.`);
 }
 
 export async function createWorkspace(formData: FormData) {
@@ -388,7 +378,7 @@ export async function saveCriterion(formData: FormData) {
   }
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Criterion does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/dataset");
 }
 
 export async function saveSuggestedCriteria(
@@ -448,7 +438,7 @@ export async function saveSuggestedCriteria(
   const { error: insertError } = await supabase.from("evaluation_criteria").insert(rows);
   if (insertError) throw insertError;
 
-  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/dataset");
   return { insertedCount: rows.length, skippedNames };
 }
 
@@ -479,7 +469,7 @@ export async function reorderCriteria(workspaceSlug: string, projectId: string, 
     p_ordered_ids: validatedIds
   });
   if (error) throw new Error(`Criterion order could not be saved: ${error.message}`);
-  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(validatedWorkspaceSlug, validatedProjectId, "/criteria", "/dataset");
 }
 
 export async function deleteCriterion(formData: FormData) {
@@ -490,7 +480,7 @@ export async function deleteCriterion(formData: FormData) {
   const { data, error } = await supabase.from("evaluation_criteria").delete().eq("id", id).eq("project_id", projectId).select("id").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Criterion does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/review");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/criteria", "/dataset");
 }
 
 export async function saveTestCase(formData: FormData) {
@@ -505,39 +495,74 @@ export async function saveTestCase(formData: FormData) {
     user_input: formString(formData, "user_input"),
     case_type: caseType,
     variable_values: parseJsonObject(formString(formData, "variable_values") || "{}"),
-    expected_answer: formString(formData, "expected_answer") || null,
-    status: "draft"
+    status: "draft" as const
   };
   if (!payload.user_input) throw new Error("Test case input is required.");
 
-  const result = id
-    ? await supabase.from("test_cases").update(payload).eq("id", assertUuid(id, "Test case ID")).eq("project_id", projectId).select("id").maybeSingle()
+  const testCaseId = id ? assertUuid(id, "Test case ID") : null;
+  const result = testCaseId
+    ? await supabase
+        .from("test_cases")
+        .update({ ...payload, generated_ai_output: null, prompt_version_id: null, model_used: null })
+        .eq("id", testCaseId)
+        .eq("project_id", projectId)
+        .select("id")
+        .maybeSingle()
     : await supabase.from("test_cases").insert(payload).select("id").single();
   if (result.error) throw result.error;
   if (!result.data) throw new Error("Test case does not belong to this project.");
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
+  if (testCaseId) {
+    const { error: reviewError } = await supabase
+      .from("human_reviews")
+      .delete()
+      .eq("test_case_id", testCaseId)
+      .eq("project_id", projectId);
+    if (reviewError) throw reviewError;
+  }
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
 }
 
-export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, cases: Array<Record<string, unknown>>) {
+export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, promptVersionId: string, cases: PreparedGeneratedSuggestion[]) {
   const supabase = await createClient();
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
-  if (!cases.length) throw new Error("No generated test cases were supplied.");
-  const rows = cases.map((testCase) => {
-    const caseType = String(testCase.case_type || "normal");
-    if (!caseTypes.has(caseType)) throw new Error("Generated test case contains an unsupported case type.");
-    return {
+  const promptId = assertUuid(promptVersionId, "Prompt version ID");
+  const parsedCases = generatedTestCasesSchema.safeParse({ test_cases: cases });
+  if (!parsedCases.success || !parsedCases.data.test_cases.length) throw new Error("No valid generated test cases were supplied.");
+
+  const [{ data: prompt, error: promptError }, existingInputs] = await Promise.all([
+    supabase.from("prompt_versions").select("variable_schema").eq("id", promptId).eq("project_id", projectId).maybeSingle(),
+    fetchAllTestCaseInputs(supabase, projectId)
+  ]);
+  if (promptError) throw promptError;
+  if (!prompt) throw new Error("Selected prompt version does not belong to this project.");
+  const variableSchema = validateVariableSchema(prompt.variable_schema);
+  const seen = new Set(existingInputs.map(normalizeTestCaseInput).filter(Boolean));
+  const rows: Array<{ project_id: string; user_input: string; case_type: string; variable_values: Record<string, string | number | boolean | null>; status: "draft" }> = [];
+  let skippedDuplicateCount = 0;
+
+  for (const [index, testCase] of parsedCases.data.test_cases.entries()) {
+    const userInput = testCase.user_input.trim();
+    const normalized = normalizeTestCaseInput(userInput);
+    if (!normalized) throw new Error("Generated test cases must include a question.");
+    if (seen.has(normalized)) {
+      skippedDuplicateCount += 1;
+      continue;
+    }
+    seen.add(normalized);
+    rows.push({
       project_id: projectId,
-      user_input: String(testCase.user_input || "").trim(),
-      case_type: caseType,
-      variable_values: testCase.variable_values || {},
-      expected_answer: testCase.expected_answer ? String(testCase.expected_answer) : null,
-      status: "draft"
-    };
-  });
-  if (rows.some((row) => !row.user_input)) throw new Error("Generated test cases must include user input.");
+      user_input: userInput,
+      case_type: testCase.case_type,
+      variable_values: prepareSuggestionVariableValues(variableSchema, cases[index]?.variable_values),
+      status: "draft" as const
+    });
+  }
+
+  if (!rows.length) throw new Error("No unique test cases remain to save. Remove or edit the duplicates and try again.");
   const { error } = await supabase.from("test_cases").insert(rows);
   if (error) throw error;
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
+  return { insertedCount: rows.length, skippedDuplicateCount };
 }
 
 export async function deleteTestCase(formData: FormData) {
@@ -556,24 +581,39 @@ export async function saveHumanReview(formData: FormData) {
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
   const testCaseId = assertUuid(formString(formData, "test_case_id"), "Test case ID");
-  await assertRelatedRecord("test_cases", testCaseId, projectId, "Test case");
+  const { data: testCase, error: testCaseLookupError } = await supabase
+    .from("test_cases")
+    .select("id, generated_ai_output, status")
+    .eq("id", testCaseId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (testCaseLookupError) throw testCaseLookupError;
+  if (!testCase) throw new Error("Test case does not belong to this project.");
+  if (!testCase.generated_ai_output || !["generated", "reviewed"].includes(testCase.status)) {
+    throw new Error("Run this test case before saving a review.");
+  }
 
   const ratingEntries = Array.from(formData.entries()).filter(([key]) => key.startsWith("rating_"));
   const criterionIds = ratingEntries.map(([key]) => assertUuid(key.replace("rating_", ""), "Criterion ID"));
-  const { data: criteria, error: criteriaError } = criterionIds.length
-    ? await supabase.from("evaluation_criteria").select("id").eq("project_id", projectId).in("id", criterionIds)
-    : { data: [], error: null };
+  if (new Set(criterionIds).size !== criterionIds.length) throw new Error("Each criterion can only be rated once.");
+  const { data: criteria, error: criteriaError } = await supabase
+    .from("evaluation_criteria")
+    .select("id")
+    .eq("project_id", projectId);
   if (criteriaError) throw criteriaError;
-  if ((criteria || []).length !== new Set(criterionIds).size) throw new Error("One or more ratings reference criteria outside this project.");
-
+  const savedCriterionIds = new Set((criteria || []).map((criterion) => criterion.id));
+  if (!savedCriterionIds.size) throw new Error("Add evaluation criteria before reviewing an output.");
+  if (criterionIds.length !== savedCriterionIds.size || criterionIds.some((id) => !savedCriterionIds.has(id))) {
+    throw new Error("Rate every saved evaluation criterion before marking this case as reviewed.");
+  }
   const { data: review, error: reviewError } = await supabase
     .from("human_reviews")
     .upsert(
       {
         project_id: projectId,
         test_case_id: testCaseId,
-        failure_category: formString(formData, "failure_category") || null,
-        severity: formString(formData, "severity") || null,
+        failure_category: null,
+        severity: null,
         human_notes: formString(formData, "human_notes") || null,
         reviewed_at: new Date().toISOString()
       },
@@ -602,7 +642,7 @@ export async function saveHumanReview(formData: FormData) {
 
   const { error: testCaseError } = await supabase.from("test_cases").update({ status: "reviewed" }).eq("id", testCaseId).eq("project_id", projectId);
   if (testCaseError) throw testCaseError;
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/review", "/results");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
 }
 
 export async function savePromptDraft(formData: FormData) {

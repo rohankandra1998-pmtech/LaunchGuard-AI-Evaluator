@@ -71,14 +71,28 @@ export async function POST(request: Request) {
 
       const { error: testCaseError } = await supabase
         .from("test_cases")
-        .update({ generated_ai_output: output, prompt_version_id: promptId, model_used: selectedModel, status: "generated" })
+        .update({ generated_ai_output: output, prompt_version_id: promptId, model_used: selectedModel })
         .eq("id", testCase.id)
         .eq("project_id", project_id);
       if (testCaseError) throw testCaseError;
+
+      const { error: reviewError } = await supabase
+        .from("human_reviews")
+        .delete()
+        .eq("test_case_id", testCase.id)
+        .eq("project_id", project_id);
+      if (reviewError) throw reviewError;
+
+      const { error: statusError } = await supabase
+        .from("test_cases")
+        .update({ status: "generated" })
+        .eq("id", testCase.id)
+        .eq("project_id", project_id);
+      if (statusError) throw statusError;
       results.push({ id: testCase.id, output });
     }
 
-    revalidateProjectActivityPaths(workspace_slug, project_id, "/dataset", "/review", "/results");
+    revalidateProjectActivityPaths(workspace_slug, project_id, "/dataset", "/results");
     return NextResponse.json({ run_id: run.id, results });
   } catch (error) {
     const status = error instanceof PromptVariableError ? 400 : 500;

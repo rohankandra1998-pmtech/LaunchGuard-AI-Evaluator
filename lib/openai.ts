@@ -17,21 +17,32 @@ export function getReasoningModel() {
   return process.env.OPENAI_REASONING_MODEL || "gpt-5";
 }
 
-export async function runStructuredOutput<TSchema extends z.ZodTypeAny>(options: {
+export function getTestCaseGenerationModel() {
+  return process.env.OPENAI_TEST_CASE_MODEL || "gpt-5-mini";
+}
+
+type StructuredOutputOptions<TSchema extends z.ZodTypeAny> = {
   schemaName: string;
   schema: TSchema;
   instructions: string;
   input: string;
-}) {
+};
+
+async function runStructuredOutputWithModel<TSchema extends z.ZodTypeAny>(
+  options: StructuredOutputOptions<TSchema>,
+  model: string,
+  verbosity?: "low"
+) {
   const client = getClient();
   const response = await client.responses.parse({
-    model: getReasoningModel(),
+    model,
     input: [
       { role: "developer", content: options.instructions },
       { role: "user", content: options.input }
     ],
     text: {
-      format: zodTextFormat(options.schema, options.schemaName)
+      format: zodTextFormat(options.schema, options.schemaName),
+      ...(verbosity ? { verbosity } : {})
     }
   });
 
@@ -39,7 +50,20 @@ export async function runStructuredOutput<TSchema extends z.ZodTypeAny>(options:
     throw new Error("The AI response did not match the expected schema.");
   }
 
-  return response.output_parsed as z.infer<TSchema>;
+  return {
+    output: response.output_parsed as z.infer<TSchema>,
+    model: response.model,
+    usage: response.usage
+  };
+}
+
+export async function runStructuredOutput<TSchema extends z.ZodTypeAny>(options: StructuredOutputOptions<TSchema>) {
+  const result = await runStructuredOutputWithModel(options, getReasoningModel());
+  return result.output;
+}
+
+export function runTestCaseStructuredOutput<TSchema extends z.ZodTypeAny>(options: StructuredOutputOptions<TSchema>) {
+  return runStructuredOutputWithModel(options, getTestCaseGenerationModel(), "low");
 }
 
 export async function generateProductOutput(options: {

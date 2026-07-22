@@ -14,16 +14,19 @@ export const suggestedCriteriaSchema = z.object({
   criteria: z.array(suggestedCriterionSchema).max(3)
 });
 
+export const GENERATED_TEST_CASE_RATIONALE_MAX_LENGTH = 180;
+
+export const generatedTestCaseSchema = z.object({
+  user_input: z.string().min(1).max(500),
+  case_type: z.enum(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]),
+  rationale: z
+    .string()
+    .min(1)
+    .max(GENERATED_TEST_CASE_RATIONALE_MAX_LENGTH)
+});
+
 export const generatedTestCasesSchema = z.object({
-  test_cases: z.array(
-    z.object({
-      user_input: z.string(),
-      case_type: z.enum(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]),
-      variable_values: z.record(z.string()),
-      expected_answer: z.string().optional().nullable(),
-      rationale: z.string()
-    })
-  )
+  test_cases: z.array(generatedTestCaseSchema).max(10)
 });
 
 export const errorAnalysisSchema = z.object({

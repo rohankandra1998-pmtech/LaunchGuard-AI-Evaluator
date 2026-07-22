@@ -1,5 +1,104 @@
 # Design QA
 
+## Starter Set Review Selection Redesign - July 21, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 21, 2026, 10_41_32 PM.png` (1672 x 941 px).
+- Browser-rendered implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\starter-set-review-1440.png` (1425 x 891 captured pixels from a 1440 x 900 CSS viewport, device scale factor 1). Additional evidence: `starter-set-review-1440-scrolled.png`, `starter-set-review-1024.png`, `starter-set-review-768.png`, and `starter-set-review-390.png` in the same directory.
+- State: Prompt v2 generated 10 real suggestions, initially all included. The reference depicts 7 selected and 3 excluded; the implementation intentionally defaults to all selected per the approved behavior specification.
+- Full-view comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\starter-set-review-full-comparison.png`. The source was proportionally normalized to 1425 x 802 and centered against the implementation's 1425 x 810 modal crop; no density mismatch was used to judge fidelity.
+- Focused card comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\starter-set-review-card-comparison.png`. This was required because the question, variable selector/value, metadata, chips, and rationale are too small to assess reliably in the full-view comparison.
+
+### Findings and comparison history
+
+- Pass 1 found no actionable P0/P1/P2 visual mismatch. The modal preserves the reference hierarchy, purple selected treatment, neutral excluded treatment, one full-width card per row, approximately 35/45/20 desktop content grid, muted rationale, and persistent header/toolbar/footer. Live Prompt v2 values and rationales are substantially longer than the illustrative mock content, so implementation cards are taller; this is an accepted content-driven difference because values wrap naturally and no fixed card height or truncation was introduced.
+- Typography uses the existing LaunchGuard family, weights, scale, and line-height hierarchy. Colors, borders, radii, shadows, badges, focus treatment, and semantic selected/excluded states map to existing `guard` tokens. Existing Lucide icons remain optically consistent; the source contains no raster content or custom image asset that required generation.
+- Accessibility hardening added unique screen-reader context to every per-case selected-variable label before the final build. Native inclusion checkboxes, contextual remove buttons, pressed filter states, required/optional text metadata, and question-error associations were verified. This did not alter the visible comparison.
+- Responsive evidence: 1440 x 900, 1024 x 768, 768 x 900, and 390 x 844 were exercised. The measured dialog scroll width never exceeded its client width; card sections stacked below the desktop breakpoint; Save remained visible; only the card body scrolled; and header, toolbar, and footer did not overlap focused content.
+- Interaction evidence: Select all and Deselect all updated every remaining suggestion; All, Selected, and Excluded filters showed 9/8/1 after an individual exclusion; edits and the independently selected Policy Information variable survived filtering; switching Product/Policy values preserved both edits; X removed one suggestion and changed the total from 10 to 9.
+- Validation evidence: existing-dataset and within-generated-set duplicates blocked Save only while both affected cases were included. Excluding an invalid case removed its warning and enabled `Save 9`; re-including restored the warning immediately. Zero selected disabled Save. Cancel closed the dialog and left the two-row dataset unchanged.
+- Console: no browser warnings or errors were observed during the final interaction and responsive pass.
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed.
+
+final result: passed
+
+## AI-Generated Starter Test Cases - July 21, 2026
+
+- Scope: selected-prompt generation, schema-aware editable suggestions, duplicate prevention, accurate saves, and removal of the legacy `expected_answer` runtime contract.
+- Prompt fidelity: live generation succeeded for prompt v1 and prompt v2 using their exact IDs. Each response returned 10 suggestions and the modal displayed the matching prompt version, variable fields, typed values, defaults/context, case-type badges, and rationale.
+- Duplicate protection: generated results are normalized and filtered against the complete project dataset and against one another. Editing a question to match an existing row or another suggestion produced an inline warning and disabled save. The server repeats normalization and duplicate filtering immediately before insertion and reports inserted and skipped counts.
+- Editing and save behavior: question text and every generated variable value are editable before saving; individual suggestions can be removed; empty or duplicate questions cannot be submitted. The persistence path was source- and build-validated to insert draft rows only, omit rationale, and return actual insert/skip counts. Live QA intentionally cancelled instead of writing generated test data to the shared prototype dataset.
+- Prompt ownership: a well-formed prompt ID outside the requested project returned HTTP 404 before generation.
+- Legacy contract: `expected_answer` was removed from application types, manual/generated inserts, CSV export, and seed behavior. The nullable legacy database column remains untouched, avoiding a destructive migration.
+- Responsive and accessibility: at 390 x 844 the 10-card modal remained vertically scrollable with no dialog-level horizontal overflow; question labels, inline error associations, remove labels, and footer actions remained available. Desktop and mobile cancellation preserved the existing two-row queue.
+- Browser console: no warnings or errors remained after the final v1/v2 and mobile runs.
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed.
+
+final result: passed
+
+## Review Panel Copy and Clear-Rating Polish - July 21, 2026
+
+- Scope: icon-only contextual copy controls in the Review Panel and stable criterion headers when the local Clear rating action appears.
+- Copy controls: User Input and AI Output render as 40 x 40 px icon-only buttons with contextual accessible names, empty visible labels, reserved content padding, and subtle purple and green idle treatments respectively. Both changed to the shared green success state, copied the exact displayed values, and reset to their idle accessible names after the existing two-second timer.
+- Shared-component regression: the Prompt Version Builder continues to render the default labeled `Copy` control. The shared clipboard fallback, failed state, disabled treatment, focus ring, title tooltip, and live announcements remain unchanged.
+- Rating interaction: selecting a rating produced identical criterion-card, title, and description dimensions before and after the 32 px Clear rating action appeared. Clearing Policy-grounded accuracy left Helpful task completion selected; the global Clear Ratings action then removed every remaining local selection.
+- Responsive and accessibility: at 390 x 844, both copy buttons remained inside their content surfaces, measured 40 x 40 px, did not overlap content, and introduced no horizontal overflow. Native required radio inputs and criterion-specific Clear rating labels remain intact.
+- Browser console: the isolated validation runtime reported no warnings or errors.
+- Validation: `npm run typecheck` and `npm run lint` passed.
+
+final result: passed
+
+## Golden Dataset Review Interaction Refinement - July 21, 2026
+
+- Scope: criterion-level local rating clearing and shared labeled Copy buttons inside User Input and AI Output surfaces.
+- Source references: `codex-clipboard-491469f3-608a-4c63-8dc7-d11e8f039e82.png`, `codex-clipboard-3c6a9034-e0c0-4660-b9c9-3a779998613e.png`, `codex-clipboard-47050cd5-0d15-4a1f-be37-b72fdcc22123.png`, `codex-clipboard-f71844e3-3291-49a6-a4d3-18a3d95380e7.png`, and `codex-clipboard-9c522b62-719e-4d35-bd22-a3deccdd8b9e.png`.
+- Desktop Copy/Copied evidence: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\review-copy-buttons-copied-desktop.png`.
+- Browser interaction results: selecting and clearing one criterion changed only that local radio group, kept Human Notes unchanged, left the submission disabled, and preserved the global Clear Ratings action.
+- Copy-button results: User Input and AI Output exposed context-specific accessible names, changed from Copy to Copied, reset after the existing timer, and copied exact live values after isolated clipboard checks. Prompt Version retains its compiled-prompt context and disabled explanation.
+- Accessibility: native required radio groups remain intact; the criterion Clear action is a separate `type="button"` with a criterion-specific accessible label and focus treatment; shared CopyButton status announcements now identify their content context.
+- Responsive implementation: labeled Copy controls remain absolutely positioned inside relative content surfaces with reserved text padding; criterion headers wrap independently from their conditional Clear actions; no fixed content heights were introduced.
+- Validation: `npm run typecheck`, `npm run lint`, and `npm run build` passed.
+- Remaining differences: none identified in the focused interaction scope.
+
+final result: passed
+
+## Golden Dataset Expanded Rating Rubrics - July 21, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\Generated image 1 (4).png`
+- Desktop unrated state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-desktop-unrated.png`
+- Desktop selected and keyboard-focus state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-desktop-selected.png`
+- Narrow laptop state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-1024.png`
+- Tablet state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-tablet.png`
+- Mobile state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\expanded-rubric-mobile.png`
+- Tested viewports: 1440 x 900 desktop; 1024 x 768 narrow laptop; 768 x 900 tablet; 390 x 844 mobile.
+
+### Source-reference and visual findings
+
+- The reference replaces four compact criterion cards and hidden definition popovers with a two-column desktop rubric. The implementation now renders each complete Good, Average, and Bad definition inside a vertically stacked, full-row radio target.
+- Desktop computes two equal rubric columns at 1440 px. The grid switches to one column below the `xl` breakpoint, keeping long definitions readable at 1024 px, 768 px, and 390 px without fixed heights, line clamps, ellipses, or horizontal scrolling.
+- Unselected rows retain light green, amber, and red token surfaces and borders. Selected rows use stronger semantic borders and backgrounds; icons and written labels ensure selection is not communicated by color alone.
+- Lucide `ThumbsUp`, the existing 90-degree rotated `ThumbsUp`, and `ThumbsDown` treatments match the established LaunchGuard semantic icon language. No raster icon or new dependency was introduced.
+
+### Interaction and persistence results
+
+- An unrated generated case opened with zero checked radios, the incomplete guidance message, and the disabled `Mark as Reviewed` action.
+- Mixed Good, Average, and Bad selections were exercised across all four live criteria. Completion changed to “All criteria rated. Ready to save.” and enabled the primary action.
+- `Clear Ratings` removed all four local selections, disabled itself and the save action, and restored “Rate all 4 criteria to continue.” without submitting or deleting persisted ratings.
+- The previously reviewed case reopened with all four saved ratings prepopulated and the `Update Review` action visible. Submitting the unchanged saved review completed successfully and displayed “Review updated.”
+- Criteria remain mapped in server-provided sort order. The content-driven grid and card components contain no fixed criterion-count assumptions, so odd counts occupy the final row naturally.
+
+### Accessibility and responsive findings
+
+- Each criterion remains a native `fieldset` with a direct `legend`; every option remains a required radio named `rating_${criterion.id}` with an explicit accessible label containing the rating and complete definition.
+- The complete row is clickable. Keyboard Space selection was exercised on a focused radio, and the selected row displayed the existing two-pixel focus-visible ring with offset.
+- Human Notes remains full width below the rubric. The sticky footer stays in normal document flow, does not cover rubric or notes content, and its actions wrap cleanly on narrow screens.
+- Measured document width equaled client width at 1440, 1024, 768, and 390 px. Mobile criterion width was 301 px and all definition text wrapped naturally. Browser console inspection returned no warnings or errors.
+
+### Remaining differences
+
+- The reference image uses illustrative Nike content and slightly different viewport cropping. The implementation intentionally renders live criterion records and preserves the existing LaunchGuard shell, queue, toolbar, navigation, and data flows.
+
+final result: passed
+
 ## Focused Interaction Polish - July 18, 2026
 
 - Desktop empty-state evidence: `C:\Users\Rohan\.codex\visualizations\2026\07\18\019f7725-e337-7220-97c9-5df81d81113c\variable-drawer-polish-desktop-empty.png`
@@ -73,6 +172,96 @@
 **Follow-up Polish**
 
 - P3: the current LaunchGuard app shell differs from the conceptual navigation shown in the visual reference; this was intentionally left unchanged because the requested scope is the variable editor.
+
+final result: passed
+
+## Golden Dataset Semantic Rating Icons - July 20, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 20, 2026, 06_36_17 PM.png`
+- Existing-state reference: `C:\Users\Rohan\AppData\Local\Temp\codex-clipboard-c2c243bd-9a17-4571-af5a-745bd9217a4e.png`
+- Desktop implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-desktop.png`
+- Selected and keyboard-focus state: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-selected.png`
+- Two-column implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-two-column.png`
+- Mobile implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-mobile.png`
+- Combined focused comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\rating-icons-comparison.png`
+- Viewports: default four-card workspace, 1024 x 900 two-column layout, and 390 x 844 mobile layout.
+
+**Findings**
+
+- The implementation matches the source's semantic rating language with Lucide `ThumbsUp`, a 90-degree rotated `ThumbsUp`, and `ThumbsDown` icons using the existing green, amber, and red LaunchGuard tokens.
+- The first responsive pass exposed a P2 overlap at the narrow four-card workspace width. Replacing the fixed three-column control grid with a wrapping flex row keeps every icon and label intact; the four-card view wraps vertically, the two-column view uses two rows, and mobile keeps all three choices on one row.
+- Bounding-box checks found no rating-control overflow at any tested layout, and the 1024 px and 390 px pages have no horizontal document overflow.
+- The supplied PNG icon examples were used only as visual references because their checkerboard backgrounds are baked into the raster. No raster asset or new icon dependency was introduced.
+- No actionable P0, P1, or P2 visual differences remain in the semantic-rating scope.
+
+**Interaction and Accessibility QA**
+
+- Good, Average, and Bad were selected in the real review form and each exposed its exact expected value.
+- Native required radio inputs remain grouped by `rating_${criterion.id}` and retain saved-rating prepopulation.
+- Every visible control has semantic hover and checked colors. The selected control exposes a two-pixel `focus-visible` ring with offset; the focused selected state was visually captured.
+- All four criteria were rated and the real `Mark as Reviewed` action completed. Reopening case `TC-276B5D` showed `Update Review` with all four saved Good ratings prepopulated.
+
+**Comparison History**
+
+- The existing workspace used text-only Good/Average/Bad controls.
+- The initial icon implementation preserved form behavior but let labels collide in the narrow four-card review panel; the responsive wrapping correction removed the collision without hiding labels or changing data behavior.
+- Final side-by-side inspection confirms semantic icon direction, token colors, selected emphasis, keyboard focus visibility, and compact responsive wrapping.
+
+final result: passed
+
+## Golden Dataset Review Workspace - July 20, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 20, 2026, 06_36_17 PM.png`
+- Desktop implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\golden-dataset-desktop-final.png`
+- Mobile implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\golden-dataset-mobile.png`
+- Full-view comparison evidence: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\golden-dataset-comparison.png`
+- Focused review-panel comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\golden-dataset-review-panel-comparison.png`
+- Viewports: 1496 x 1024 desktop and 390 x 844 mobile.
+- State: one generated case selected, with a complete AI output and unrated evaluation criteria.
+
+**Findings**
+
+- No actionable P0, P1, or P2 findings remain.
+- Fonts and typography: the implementation retains LaunchGuard's established system font, compact label scale, semibold hierarchy, readable output line height, and restrained metadata treatment. Long real criterion names wrap within their cards while descriptions use bounded two-line previews and full definitions remain available from the information control.
+- Spacing and layout rhythm: desktop uses the requested master-detail ratio, compact queue, rounded white surfaces, lavender selection, subtle borders, and a spacious review panel. Toolbar controls remain on one row at the reference viewport; mobile stacks the toolbar, queue, and review panel without document overflow.
+- Colors and visual tokens: white and lavender surfaces, purple actions, neutral/amber/green statuses, and green/amber/red ratings all map to existing `guard-*` Tailwind tokens. Disabled controls retain semantic disabled state in addition to color.
+- Image quality and asset fidelity: the target is a product UI without required photographic or illustrative raster assets. Existing LaunchGuard branding and the project's Lucide icon family were reused; no placeholder imagery, CSS art, or handcrafted SVG was introduced.
+- Copy and content: the implementation preserves the Golden Dataset title and unified-workflow subtitle, uses Draft/Ready to Review/Reviewed labels, hides Expected Answer and raw variable JSON, and presents model, prompt version, output state, review metadata, and a single review action.
+- Accessibility and behavior: queue rows and controls are keyboard reachable, active navigation retains `aria-current`, dialogs use native focus trapping and Escape close, radio groups use labelled native inputs, copy/run/save disabled states are semantic, and mobile has no horizontal document overflow.
+
+**Browser QA**
+
+- Verified the desktop generated-output state, four saved criteria in `sort_order`, complete prompt/model metadata, copy controls, queue counts, status styling, and disabled review action until every criterion is rated.
+- Verified Add Test Case opens a labelled native dialog and renders structured `long_text` prompt-variable controls from the active prompt version; no Expected Answer or raw JSON input is exposed.
+- Verified search produces the scoped no-results state and clearing search restores the selected case.
+- Verified the legacy `/review` route resolves to the corresponding `/dataset` URL.
+- Verified the 390 x 844 mobile layout stacks controls and queue content with `scrollWidth <= innerWidth`; both queue and review regions remain present in document order.
+- Verified zero browser-console errors in the final desktop state.
+- AI-generating and destructive persistence actions were not executed during visual QA to avoid consuming a model request or altering the shared public prototype data; their loading, error, and confirmation paths were verified by code and production build.
+
+**Comparison History**
+
+- Initial desktop pass found a P2 toolbar-density issue: placing Add Test Case beside every run control forced the toolbar onto two rows. The action moved to the queue header, restoring the reference's single-line run toolbar.
+- Initial pass found P2 proportion drift from the pre-existing 256 px app sidebar and a two-column criteria layout. The shell now uses a 192 px desktop sidebar and the review criteria use four columns at the reference viewport, matching the source's major regions.
+- Initial pass found a P2 discoverability gap when case type disappeared at the reference breakpoint. Case type now remains visible beside the compact case identifier while preserving input-preview width.
+- Initial pass placed the primary review action just below the captured viewport. Prompt metadata moved into compact output-header badges, notes height was tightened to the source, and the review footer gained sticky positioning. Post-fix evidence shows the action at the panel edge without obscuring review fields.
+- The final full-view and focused comparisons show matching master-detail composition, output treatment, four-card criterion row, metadata hierarchy, and semantic actions. Differences in global navigation labels and dynamic dataset content are expected because the implementation preserves LaunchGuard's existing shell and live project data.
+
+**Implementation Checklist**
+
+- [x] Unified queue and review workspace
+- [x] Explicit single and batch generation controls
+- [x] Draft, generated, reviewed, empty-criteria, and filtered states
+- [x] Structured test-case variable editor
+- [x] Starter-set preview before save
+- [x] Accessible semantic rating controls
+- [x] Responsive desktop and mobile layouts
+- [x] Legacy review-route redirect
+- [x] Browser interaction and console verification
+
+**Follow-up Polish**
+
+- P3: the reference uses a broader global product sidebar and utility header than this repository currently implements. The existing LaunchGuard information architecture and icon family were intentionally preserved while matching the requested Golden Dataset surface.
 
 final result: passed
 
@@ -158,3 +347,17 @@ final result: passed
 - P3: if the AI service frequently returns zero criteria in production, add server-side minimum-length validation to the structured response schema so that condition is surfaced as a generation error.
 
 final result: passed
+
+## Generate Starter Set Waiting Experience - July 22, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 22, 2026, 04_00_13 PM.png` (1456 x 1086 px).
+- Scope: immediate loading modal, elapsed-time status, indeterminate progress, responsive skeleton cards, inline retryable error, and in-place transition to the existing review UI.
+- Implementation review: the existing shared modal, LaunchGuard tokens, and Lucide icon family are preserved. The loading hierarchy follows the reference while the successful review-state markup remains unchanged.
+- Accessibility review: loading uses a polite status region; the error state uses an alert region; skeletons are hidden from assistive technology; buttons retain visible focus treatment; and custom animation stops under `prefers-reduced-motion`.
+- Request-lifecycle review: the selected prompt ID is captured before the request, retry reuses that ID, close/unmount abort the browser request, and an attempt guard prevents abandoned or stale responses from replacing a newer state.
+- Responsive source review: content is width-constrained rather than fixed, skeleton rows stack below the small breakpoint, the dialog body scrolls inside `90dvh`, and the header close action remains outside the scrolling body.
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed.
+- Live visual QA limitation: the local Next.js server returned HTTP 200 for an isolated QA route, but the in-app browser blocked the local URL under its URL policy. The requested 1440 px, 768 px, 390 px, inline-error, and successful-transition screenshots could not be captured, and no reference/implementation composite comparison could be completed.
+- Reference deviations: standard application icons and the existing modal shell are used instead of recreating the reference's decorative artwork; the existing review modal width and contents remain unchanged because the reference applies only to the waiting state.
+
+final result: blocked

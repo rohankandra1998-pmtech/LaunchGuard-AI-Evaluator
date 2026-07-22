@@ -52,7 +52,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ worksp
           <div className="mt-4 grid gap-3">
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/criteria")}>Suggest Criteria</ButtonLink>
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/dataset")}>Generate Starter Test Set</ButtonLink>
-            <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/review")}>Human Review</ButtonLink>
+            <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/dataset")}>Review AI Outputs</ButtonLink>
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/results")}>View Results</ButtonLink>
           </div>
         </Card>

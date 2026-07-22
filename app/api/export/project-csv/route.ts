@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 
     const header = [
       "workspace_name", "project_name", "prompt_version", "model_used", "test_case_id", "user_input",
-      "variable_values", "expected_answer", "ai_output", "criterion_ratings", "failure_category", "severity",
+      "variable_values", "ai_output", "criterion_ratings", "failure_category", "severity",
       "human_notes", "review_status", "created_at", "updated_at"
     ];
     const rows = (testCases || []).map((testCase) => {
@@ -61,7 +61,6 @@ export async function GET(request: Request) {
         testCase.id,
         testCase.user_input,
         testCase.variable_values,
-        testCase.expected_answer,
         testCase.generated_ai_output,
         review ? ratingsByReview.get(review.id)?.join("; ") : "",
         review?.failure_category,

@@ -6,6 +6,18 @@ import { cn } from "@/lib/utils";
 
 type CopyState = "idle" | "copied" | "failed";
 
+type CopyButtonProps = {
+  text: string;
+  disabled?: boolean;
+  iconOnly?: boolean;
+  tone?: "purple" | "green";
+  idleLabel?: string;
+  successLabel?: string;
+  contextLabel?: string;
+  disabledTitle?: string;
+  className?: string;
+};
+
 async function copyPlainText(text: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -29,7 +41,7 @@ async function copyPlainText(text: string) {
   }
 }
 
-export function CopyButton({ text, disabled = false, idleLabel = "Copy", successLabel = "Copied", className = "" }: { text: string; disabled?: boolean; idleLabel?: string; successLabel?: string; className?: string }) {
+export function CopyButton({ text, disabled = false, iconOnly = false, tone = "purple", idleLabel = "Copy", successLabel = "Copied", contextLabel = "content", disabledTitle, className = "" }: CopyButtonProps) {
   const [state, setState] = useState<CopyState>("idle");
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
@@ -63,6 +75,7 @@ export function CopyButton({ text, disabled = false, idleLabel = "Copy", success
 
   const label = state === "copied" ? successLabel : state === "failed" ? "Copy failed" : idleLabel;
   const Icon = state === "copied" ? Check : state === "failed" ? TriangleAlert : Copy;
+  const accessibleLabel = state === "failed" ? `Copy failed for ${contextLabel}` : `${label} ${contextLabel}`;
 
   return (
     <>
@@ -70,17 +83,25 @@ export function CopyButton({ text, disabled = false, idleLabel = "Copy", success
         type="button"
         onClick={copy}
         disabled={disabled}
-        aria-label={`${label} compiled prompt`}
-        title={disabled ? "Resolve preview errors before copying the compiled prompt." : `${idleLabel} compiled prompt`}
+        aria-label={accessibleLabel}
+        title={disabled ? disabledTitle || `${contextLabel} is not available to copy.` : `${idleLabel} ${contextLabel}`}
         className={cn(
-          "focus-ring inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:border-guard-line disabled:bg-slate-100 disabled:text-slate-400",
-          state === "copied" ? "border-green-200 bg-guard-greenSoft text-guard-green" : state === "failed" ? "border-red-200 bg-guard-redSoft text-guard-red" : "border-guard-primaryLine bg-white text-guard-primaryHover hover:bg-guard-primarySoft",
+          "focus-ring inline-flex items-center justify-center rounded-lg border text-sm font-semibold transition disabled:cursor-not-allowed disabled:border-guard-line disabled:bg-slate-100 disabled:text-slate-400",
+          iconOnly ? "h-10 w-10 p-0" : "gap-2 px-3 py-2",
+          state === "copied"
+            ? "border-green-200 bg-guard-greenSoft text-guard-green"
+            : state === "failed"
+              ? "border-red-200 bg-guard-redSoft text-guard-red"
+              : tone === "green"
+                ? "border-green-200 bg-white/90 text-guard-green hover:bg-guard-greenSoft/70"
+                : "border-guard-primaryLine bg-white text-guard-primaryHover hover:bg-guard-primarySoft",
           className
         )}
       >
-        <Icon className="h-4 w-4" />{label}
+        <Icon aria-hidden="true" className="h-4 w-4" />
+        {iconOnly ? null : label}
       </button>
-      <span className="sr-only" aria-live="polite">{state === "copied" ? "Compiled prompt copied to clipboard." : state === "failed" ? "The compiled prompt could not be copied." : ""}</span>
+      <span className="sr-only" aria-live="polite">{state === "copied" ? `${contextLabel.charAt(0).toUpperCase()}${contextLabel.slice(1)} copied to clipboard.` : state === "failed" ? `The ${contextLabel} could not be copied.` : ""}</span>
     </>
   );
 }
