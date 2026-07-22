@@ -14,6 +14,9 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const totalRequestStart = performance.now();
+  let currentStage = "request_validation";
+
   try {
     const parsedRequest = requestSchema.safeParse(await request.json());
     if (!parsedRequest.success) {
@@ -21,9 +24,15 @@ export async function POST(request: Request) {
     }
     const { workspace_slug, project_id, prompt_version_id } = parsedRequest.data;
     const supabase = await createClient();
+
+    currentStage = "workspace_lookup";
+    const workspaceLookupStart = performance.now();
     const context = await getWorkspaceProject(supabase, workspace_slug, project_id);
+    const workspaceLookupMs = Math.round(performance.now() - workspaceLookupStart);
     if (!context) return NextResponse.json({ error: "Project was not found in this workspace." }, { status: 404 });
 
+    currentStage = "database_context_queries";
+    const databaseContextQueriesStart = performance.now();
     const [{ data: prompt, error: promptError }, { data: criteria, error: criteriaError }, existingTestCaseInputs] = await Promise.all([
       supabase
         .from("prompt_versions")
@@ -40,11 +49,15 @@ export async function POST(request: Request) {
         .order("id"),
       fetchAllTestCaseInputs(supabase, project_id)
     ]);
+    const databaseContextQueriesMs = Math.round(performance.now() - databaseContextQueriesStart);
     if (promptError) throw promptError;
     if (criteriaError) throw criteriaError;
     if (!prompt) return NextResponse.json({ error: "Selected prompt version does not belong to this project." }, { status: 404 });
 
     const variableSchema = validateVariableSchema(prompt.variable_schema);
+
+    currentStage = "openai_request";
+    const openAIRequestStart = performance.now();
     const result = await runStructuredOutput({
       schemaName: "generated_test_cases",
       schema: generatedTestCasesSchemaForVariables(variableSchema),
@@ -83,19 +96,48 @@ Return structured JSON only.`,
         existing_test_case_inputs: existingTestCaseInputs
       }, null, 2)
     });
+    const openAIRequestMs = Math.round(performance.now() - openAIRequestStart);
 
+    currentStage = "post_processing";
+    const postProcessingStart = performance.now();
     const preparedSuggestions = result.test_cases.map((testCase) => ({
       ...testCase,
       user_input: testCase.user_input.trim(),
       variable_values: prepareSuggestionVariableValues(variableSchema, testCase.variable_values)
     }));
+    const testCases = uniqueGeneratedSuggestions(preparedSuggestions, existingTestCaseInputs, 10);
+    const postProcessingMs = Math.round(performance.now() - postProcessingStart);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       prompt_version_id: prompt.id,
       prompt_version_number: prompt.version_number,
-      test_cases: uniqueGeneratedSuggestions(preparedSuggestions, existingTestCaseInputs, 10)
+      test_cases: testCases
     });
+
+    console.info("[generate-test-cases] timing", {
+      outcome: "success",
+      workspaceLookupMs,
+      databaseContextQueriesMs,
+      openAIRequestMs,
+      postProcessingMs,
+      totalRequestMs: Math.round(performance.now() - totalRequestStart),
+      existingInputCount: existingTestCaseInputs.length,
+      generatedCaseCount: testCases.length
+    });
+
+    return response;
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    const errorName = error instanceof Error ? error.name : "UnknownError";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    console.error("[generate-test-cases] failed", {
+      outcome: "failure",
+      failedStage: currentStage,
+      totalRequestMs: Math.round(performance.now() - totalRequestStart),
+      errorName,
+      errorMessage
+    });
+
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
