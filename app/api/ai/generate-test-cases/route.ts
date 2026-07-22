@@ -25,8 +25,19 @@ export async function POST(request: Request) {
     if (!context) return NextResponse.json({ error: "Project was not found in this workspace." }, { status: 404 });
 
     const [{ data: prompt, error: promptError }, { data: criteria, error: criteriaError }, existingTestCaseInputs] = await Promise.all([
-      supabase.from("prompt_versions").select("*").eq("id", prompt_version_id).eq("project_id", project_id).maybeSingle(),
-      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id).order("sort_order").order("created_at").order("id"),
+      supabase
+        .from("prompt_versions")
+        .select("id, version_number, system_prompt, variable_schema")
+        .eq("id", prompt_version_id)
+        .eq("project_id", project_id)
+        .maybeSingle(),
+      supabase
+        .from("evaluation_criteria")
+        .select("name, description, category, good_definition, average_definition, bad_definition")
+        .eq("project_id", project_id)
+        .order("sort_order")
+        .order("created_at")
+        .order("id"),
       fetchAllTestCaseInputs(supabase, project_id)
     ]);
     if (promptError) throw promptError;
@@ -56,8 +67,17 @@ Each rationale should briefly explain what behavior, risk, boundary, or evaluati
 
 Return structured JSON only.`,
       input: JSON.stringify({
-        project: context.project,
-        selected_prompt: prompt,
+        project: {
+          name: context.project.name,
+          product_type: context.project.product_type,
+          goal: context.project.goal,
+          target_user: context.project.target_user,
+          description: context.project.description
+        },
+        selected_prompt: {
+          version_number: prompt.version_number,
+          system_prompt: prompt.system_prompt
+        },
         selected_variable_schema: variableSchema,
         evaluation_criteria: criteria,
         existing_test_case_inputs: existingTestCaseInputs
