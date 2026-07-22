@@ -1,5 +1,26 @@
 # Design QA
 
+## Starter Set Review Selection Redesign - July 21, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 21, 2026, 10_41_32 PM.png` (1672 x 941 px).
+- Browser-rendered implementation: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\starter-set-review-1440.png` (1425 x 891 captured pixels from a 1440 x 900 CSS viewport, device scale factor 1). Additional evidence: `starter-set-review-1440-scrolled.png`, `starter-set-review-1024.png`, `starter-set-review-768.png`, and `starter-set-review-390.png` in the same directory.
+- State: Prompt v2 generated 10 real suggestions, initially all included. The reference depicts 7 selected and 3 excluded; the implementation intentionally defaults to all selected per the approved behavior specification.
+- Full-view comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\starter-set-review-full-comparison.png`. The source was proportionally normalized to 1425 x 802 and centered against the implementation's 1425 x 810 modal crop; no density mismatch was used to judge fidelity.
+- Focused card comparison: `C:\Users\Rohan\Documents\AI Projects\AI Eval\artifacts\starter-set-review-card-comparison.png`. This was required because the question, variable selector/value, metadata, chips, and rationale are too small to assess reliably in the full-view comparison.
+
+### Findings and comparison history
+
+- Pass 1 found no actionable P0/P1/P2 visual mismatch. The modal preserves the reference hierarchy, purple selected treatment, neutral excluded treatment, one full-width card per row, approximately 35/45/20 desktop content grid, muted rationale, and persistent header/toolbar/footer. Live Prompt v2 values and rationales are substantially longer than the illustrative mock content, so implementation cards are taller; this is an accepted content-driven difference because values wrap naturally and no fixed card height or truncation was introduced.
+- Typography uses the existing LaunchGuard family, weights, scale, and line-height hierarchy. Colors, borders, radii, shadows, badges, focus treatment, and semantic selected/excluded states map to existing `guard` tokens. Existing Lucide icons remain optically consistent; the source contains no raster content or custom image asset that required generation.
+- Accessibility hardening added unique screen-reader context to every per-case selected-variable label before the final build. Native inclusion checkboxes, contextual remove buttons, pressed filter states, required/optional text metadata, and question-error associations were verified. This did not alter the visible comparison.
+- Responsive evidence: 1440 x 900, 1024 x 768, 768 x 900, and 390 x 844 were exercised. The measured dialog scroll width never exceeded its client width; card sections stacked below the desktop breakpoint; Save remained visible; only the card body scrolled; and header, toolbar, and footer did not overlap focused content.
+- Interaction evidence: Select all and Deselect all updated every remaining suggestion; All, Selected, and Excluded filters showed 9/8/1 after an individual exclusion; edits and the independently selected Policy Information variable survived filtering; switching Product/Policy values preserved both edits; X removed one suggestion and changed the total from 10 to 9.
+- Validation evidence: existing-dataset and within-generated-set duplicates blocked Save only while both affected cases were included. Excluding an invalid case removed its warning and enabled `Save 9`; re-including restored the warning immediately. Zero selected disabled Save. Cancel closed the dialog and left the two-row dataset unchanged.
+- Console: no browser warnings or errors were observed during the final interaction and responsive pass.
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed.
+
+final result: passed
+
 ## AI-Generated Starter Test Cases - July 21, 2026
 
 - Scope: selected-prompt generation, schema-aware editable suggestions, duplicate prevention, accurate saves, and removal of the legacy `expected_answer` runtime contract.
