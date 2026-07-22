@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
     currentStage = "openai_request";
     const openAIRequestStart = performance.now();
-    const result = await runTestCaseStructuredOutput({
+    const generationResult = await runTestCaseStructuredOutput({
       schemaName: "generated_test_cases",
       schema: generatedTestCasesSchemaForVariables(variableSchema),
       instructions:
@@ -97,6 +97,7 @@ Return structured JSON only.`,
       }, null, 2)
     });
     const openAIRequestMs = Math.round(performance.now() - openAIRequestStart);
+    const result = generationResult.output;
 
     currentStage = "post_processing";
     const postProcessingStart = performance.now();
@@ -122,7 +123,13 @@ Return structured JSON only.`,
       postProcessingMs,
       totalRequestMs: Math.round(performance.now() - totalRequestStart),
       existingInputCount: existingTestCaseInputs.length,
-      generatedCaseCount: testCases.length
+      generatedCaseCount: testCases.length,
+      model: generationResult.model,
+      input_tokens: generationResult.usage?.input_tokens ?? null,
+      cached_tokens: generationResult.usage?.input_tokens_details?.cached_tokens ?? null,
+      output_tokens: generationResult.usage?.output_tokens ?? null,
+      reasoning_tokens: generationResult.usage?.output_tokens_details?.reasoning_tokens ?? null,
+      total_tokens: generationResult.usage?.total_tokens ?? null
     });
 
     return response;

@@ -50,11 +50,16 @@ async function runStructuredOutputWithModel<TSchema extends z.ZodTypeAny>(
     throw new Error("The AI response did not match the expected schema.");
   }
 
-  return response.output_parsed as z.infer<TSchema>;
+  return {
+    output: response.output_parsed as z.infer<TSchema>,
+    model: response.model,
+    usage: response.usage
+  };
 }
 
-export function runStructuredOutput<TSchema extends z.ZodTypeAny>(options: StructuredOutputOptions<TSchema>) {
-  return runStructuredOutputWithModel(options, getReasoningModel());
+export async function runStructuredOutput<TSchema extends z.ZodTypeAny>(options: StructuredOutputOptions<TSchema>) {
+  const result = await runStructuredOutputWithModel(options, getReasoningModel());
+  return result.output;
 }
 
 export function runTestCaseStructuredOutput<TSchema extends z.ZodTypeAny>(options: StructuredOutputOptions<TSchema>) {
