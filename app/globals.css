@@ -43,6 +43,24 @@ select {
   }
 }
 
+@keyframes starter-progress-slide {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(360%); }
+}
+
+@keyframes starter-skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.starter-progress-indicator {
+  animation: starter-progress-slide 1.6s ease-in-out infinite;
+}
+
+.starter-skeleton-pulse {
+  animation: starter-skeleton-pulse 1.8s ease-in-out infinite;
+}
+
 .prompt-variable-drawer[open] {
   animation: variable-drawer-enter 180ms ease-out;
 }
@@ -69,5 +87,10 @@ select {
 
   .criterion-sortable-row {
     transition-duration: 0ms !important;
+  }
+
+  .starter-progress-indicator,
+  .starter-skeleton-pulse {
+    animation: none;
   }
 }

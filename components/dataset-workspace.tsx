@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Database,
   Info,
   Lightbulb,
@@ -79,6 +80,11 @@ const ratingTextStyles: Record<RatingLabel, string> = {
 
 type Toast = { tone: "success" | "error"; message: string } | null;
 type StarterFilter = "all" | "selected" | "excluded";
+type StarterGenerationState =
+  | { status: "idle" }
+  | { status: "generating"; promptVersionId: string; startedAt: number }
+  | { status: "success"; promptVersionId: string }
+  | { status: "error"; promptVersionId: string; message: string };
 type StarterSuggestion = PreparedGeneratedSuggestion & {
   uiId: string;
   included: boolean;
@@ -146,6 +152,10 @@ export function DatasetWorkspace({
   const [starterPromptVersionId, setStarterPromptVersionId] = useState("");
   const [starterFilter, setStarterFilter] = useState<StarterFilter>("all");
   const [starterOpen, setStarterOpen] = useState(false);
+  const [starterGeneration, setStarterGeneration] = useState<StarterGenerationState>({ status: "idle" });
+  const [starterElapsedSeconds, setStarterElapsedSeconds] = useState(0);
+  const starterAttemptRef = useRef(0);
+  const starterRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
 
   const visibleCases = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -203,6 +213,20 @@ export function DatasetWorkspace({
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    if (starterGeneration.status !== "generating") return;
+    const updateElapsed = () => setStarterElapsedSeconds(Math.floor((Date.now() - starterGeneration.startedAt) / 1000));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [starterGeneration]);
+
+  useEffect(() => () => {
+    starterAttemptRef.current += 1;
+    starterRequestRef.current?.controller.abort();
+    starterRequestRef.current = null;
+  }, []);
+
   function changeStatus(nextStatus: string) {
     setStatus(nextStatus);
     setPage(1);
@@ -242,16 +266,41 @@ export function DatasetWorkspace({
     }
   }
 
-  async function generateStarterSet() {
+  function closeStarterSet() {
+    starterAttemptRef.current += 1;
+    starterRequestRef.current?.controller.abort();
+    starterRequestRef.current = null;
+    setBusy((current) => current === "starter" ? null : current);
+    setStarterGeneration({ status: "idle" });
+    setStarterElapsedSeconds(0);
+    setStarterOpen(false);
+  }
+
+  async function generateStarterSet(selectedPromptVersionId = promptVersionId) {
+    if (!selectedPromptVersionId || starterRequestRef.current) return;
+    const requestId = starterAttemptRef.current + 1;
+    starterAttemptRef.current = requestId;
+    const controller = new AbortController();
+    starterRequestRef.current = { id: requestId, controller };
+
     setBusy("starter");
     setToast(null);
+    setGeneratedSuggestions([]);
+    setStarterPromptVersionId(selectedPromptVersionId);
+    setStarterFilter("all");
+    setStarterElapsedSeconds(0);
+    setStarterGeneration({ status: "generating", promptVersionId: selectedPromptVersionId, startedAt: Date.now() });
+    setStarterOpen(true);
+
     try {
       const response = await fetch("/api/ai/generate-test-cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id, prompt_version_id: promptVersionId })
+        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: project.id, prompt_version_id: selectedPromptVersionId }),
+        signal: controller.signal
       });
       const json = await response.json();
+      if (starterRequestRef.current?.id !== requestId) return;
       if (!response.ok) throw new Error(json.error || "Could not generate a starter set.");
       if (!json.test_cases?.length) throw new Error("No unique starter test cases were generated. Try again after updating the prompt or dataset.");
       const generatedPrompt = promptVersions.find((prompt) => prompt.id === json.prompt_version_id);
@@ -263,12 +312,19 @@ export function DatasetWorkspace({
         selectedVariableKey: initialVariable?.key || ""
       })));
       setStarterPromptVersionId(json.prompt_version_id);
-      setStarterFilter("all");
-      setStarterOpen(true);
+      setStarterGeneration({ status: "success", promptVersionId: json.prompt_version_id });
     } catch (error) {
-      setToast({ tone: "error", message: error instanceof Error ? error.message : "Could not generate a starter set." });
+      if (starterRequestRef.current?.id !== requestId || (error instanceof Error && error.name === "AbortError")) return;
+      setStarterGeneration({
+        status: "error",
+        promptVersionId: selectedPromptVersionId,
+        message: error instanceof Error ? error.message : "Could not generate a starter set."
+      });
     } finally {
-      setBusy(null);
+      if (starterRequestRef.current?.id === requestId) {
+        starterRequestRef.current = null;
+        setBusy((current) => current === "starter" ? null : current);
+      }
     }
   }
 
@@ -278,6 +334,7 @@ export function DatasetWorkspace({
       const includedSuggestions: PreparedGeneratedSuggestion[] = generatedSuggestions.filter((suggestion) => suggestion.included).map(({ user_input, case_type, variable_values, rationale }) => ({ user_input, case_type, variable_values, rationale }));
       const result = await saveGeneratedTestCases(workspaceSlug, project.id, starterPromptVersionId, includedSuggestions);
       setStarterOpen(false);
+      setStarterGeneration({ status: "idle" });
       setGeneratedSuggestions([]);
       setStarterPromptVersionId("");
       setStarterFilter("all");
@@ -361,7 +418,7 @@ export function DatasetWorkspace({
               {supportedModels.map((supportedModel) => <option key={supportedModel} value={supportedModel}>{supportedModel}</option>)}
             </Select>
           </div>
-          <button type="button" onClick={generateStarterSet} disabled={busy !== null || !promptVersionId} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3.5 text-sm font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:border-guard-line disabled:text-slate-400">
+          <button type="button" onClick={() => generateStarterSet()} disabled={busy !== null || !promptVersionId} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg border border-guard-primaryLine bg-white px-3.5 text-sm font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:border-guard-line disabled:text-slate-400">
             {busy === "starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate Starter Set
           </button>
           <button type="button" onClick={() => runCases(selectedIds)} disabled={busy !== null || !selectedIds.length || !promptVersionId || !model} className="focus-ring inline-flex h-10 items-center gap-2 rounded-lg bg-guard-primary px-4 text-sm font-semibold text-white transition hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">
@@ -484,15 +541,18 @@ export function DatasetWorkspace({
 
       {starterOpen ? (
         <Modal
-          title="Review starter set"
+          title={starterGeneration.status === "success" ? "Review starter set" : "Generate Starter Set"}
           titleIcon={<Sparkles className="h-5 w-5" />}
           titleMeta={<Badge tone="primary">Prompt v{starterPrompt?.version_number ?? "?"}</Badge>}
-          description={`Review cases generated from Prompt v${starterPrompt?.version_number ?? "?"}. Edit questions and variables before saving; rationales are for review only.`}
-          onClose={() => setStarterOpen(false)}
+          description={starterGeneration.status === "success"
+            ? `Review cases generated from Prompt v${starterPrompt?.version_number ?? "?"}. Edit questions and variables before saving; rationales are for review only.`
+            : "Creating 10 relevant and diverse test cases based on your prompt, variables, evaluation criteria, and existing dataset."}
+          onClose={closeStarterSet}
           closeDisabled={busy === "save-starter"}
-          extraWide
-          bodyClassName="bg-guard-surfaceMuted/30 px-4 py-4 sm:px-5"
-          toolbar={
+          wide={starterGeneration.status !== "success"}
+          extraWide={starterGeneration.status === "success"}
+          bodyClassName={starterGeneration.status === "success" ? "bg-guard-surfaceMuted/30 px-4 py-4 sm:px-5" : "bg-white px-4 py-6 sm:px-7 sm:py-8"}
+          toolbar={starterGeneration.status === "success" ? (
             <div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-6">
               <div className="flex items-center gap-3 lg:min-w-48">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-guard-primarySoft text-guard-primary"><Database className="h-4 w-4" /></span>
@@ -510,21 +570,29 @@ export function DatasetWorkspace({
                 <button type="button" onClick={() => setGeneratedSuggestions((current) => current.map((suggestion) => ({ ...suggestion, included: false })))} className="focus-ring rounded-lg px-3 py-2 text-xs font-semibold text-guard-primary hover:bg-guard-primarySoft">Deselect all</button>
               </div>
             </div>
-          }
-          footer={
+          ) : undefined}
+          footer={starterGeneration.status === "success" ? (
             <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div>
                 <p className={cn("text-sm font-semibold", starterHasBlockingErrors && includedStarterCount > 0 ? "text-guard-red" : "text-guard-ink")}><span>{includedStarterCount} selected</span><span className="mx-2 text-guard-lineStrong">•</span><span className="font-normal text-guard-muted">{excludedStarterCount} excluded</span></p>
                 <p className="mt-0.5 text-xs text-guard-muted">{starterHasBlockingErrors && includedStarterCount > 0 ? "Resolve empty or duplicate included questions before saving." : `${generatedSuggestions.length} total ${generatedSuggestions.length === 1 ? "case" : "cases"}`}</p>
               </div>
               <div className="flex w-full flex-col-reverse gap-3 sm:w-auto sm:flex-row">
-                <button type="button" onClick={() => setStarterOpen(false)} disabled={busy === "save-starter"} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">Cancel</button>
+                <button type="button" onClick={closeStarterSet} disabled={busy === "save-starter"} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">Cancel</button>
                 <button type="button" onClick={saveStarterSet} disabled={starterHasBlockingErrors || busy === "save-starter"} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{busy === "save-starter" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {busy === "save-starter" ? "Saving..." : `Save ${includedStarterCount} to Golden Dataset`}</button>
               </div>
             </div>
-          }
+          ) : undefined}
         >
-          {visibleStarterSuggestions.length ? (
+          {starterGeneration.status === "generating" ? (
+            <StarterSetLoadingState elapsedSeconds={starterElapsedSeconds} />
+          ) : starterGeneration.status === "error" ? (
+            <StarterSetErrorState
+              message={starterGeneration.message}
+              onRetry={() => generateStarterSet(starterGeneration.promptVersionId)}
+              onClose={closeStarterSet}
+            />
+          ) : starterGeneration.status === "success" && visibleStarterSuggestions.length ? (
             <div className="space-y-3">
               {visibleStarterSuggestions.map((suggestion) => (
                 <StarterSuggestionCard
@@ -538,7 +606,7 @@ export function DatasetWorkspace({
                 />
               ))}
             </div>
-          ) : <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-guard-lineStrong bg-white px-6 text-center text-sm text-guard-muted">No {starterFilter} cases match this filter.</div>}
+          ) : starterGeneration.status === "success" ? <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-guard-lineStrong bg-white px-6 text-center text-sm text-guard-muted">No {starterFilter} cases match this filter.</div> : null}
         </Modal>
       ) : null}
 
@@ -742,6 +810,67 @@ function CaseEditorDialog({ mode, testCase, projectId, workspaceSlug, prompt, pe
         <div className="flex justify-end gap-3 border-t border-guard-line pt-5"><button type="button" onClick={onClose} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">Cancel</button><button type="submit" disabled={pending} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{pending ? "Saving..." : mode === "edit" ? "Update Test Case" : "Add Test Case"}</button></div>
       </form>
     </Modal>
+  );
+}
+
+function StarterSetLoadingState({ elapsedSeconds }: { elapsedSeconds: number }) {
+  return (
+    <div data-testid="starter-loading-state" role="status" aria-live="polite" aria-atomic="true" className="mx-auto w-full max-w-3xl py-1 text-center sm:py-2">
+      <h3 className="text-xl font-semibold tracking-tight text-guard-ink sm:text-2xl">Creating 10 test cases</h3>
+      <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-guard-muted">Generating a starter set for review. This can take a little longer for more complex prompts.</p>
+      <p className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-guard-muted">
+        <Clock aria-hidden="true" className="h-4 w-4 text-guard-primary" />
+        {elapsedSeconds} {elapsedSeconds === 1 ? "second" : "seconds"} elapsed
+      </p>
+
+      <div aria-hidden="true" className="mt-5 h-2 overflow-hidden rounded-full bg-guard-surfaceStrong">
+        <div className="starter-progress-indicator h-full w-2/5 rounded-full bg-guard-primary" />
+      </div>
+
+      <div aria-hidden="true" className="mt-6 space-y-3">
+        {Array.from({ length: 3 }, (_, index) => <StarterSetSkeletonCard key={index} />)}
+      </div>
+
+      <p className="mx-auto mt-6 flex max-w-xl items-start justify-center gap-2 text-left text-sm leading-6 text-guard-muted sm:items-center sm:text-center">
+        <Sparkles aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-guard-primary sm:mt-0" />
+        You&apos;ll be able to review, edit, and save the cases here once generation is complete.
+      </p>
+    </div>
+  );
+}
+
+function StarterSetSkeletonCard() {
+  return (
+    <div className="flex min-w-0 flex-col gap-4 rounded-xl border border-guard-line bg-white p-4 sm:flex-row sm:items-center sm:p-5">
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="h-10 w-10 shrink-0 rounded-full bg-guard-surfaceStrong starter-skeleton-pulse motion-reduce:animate-none" />
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <div className="h-3 w-full max-w-md rounded-full bg-guard-line starter-skeleton-pulse motion-reduce:animate-none" />
+          <div className="h-3 w-2/3 max-w-xs rounded-full bg-guard-surfaceStrong starter-skeleton-pulse motion-reduce:animate-none" />
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 sm:ml-4">
+        <div className="h-2.5 w-12 rounded-full bg-guard-surfaceStrong starter-skeleton-pulse motion-reduce:animate-none" />
+        <div className="h-2.5 w-8 rounded-full bg-guard-surfaceStrong starter-skeleton-pulse motion-reduce:animate-none" />
+      </div>
+    </div>
+  );
+}
+
+function StarterSetErrorState({ message, onRetry, onClose }: { message: string; onRetry: () => void; onClose: () => void }) {
+  return (
+    <div data-testid="starter-error-state" role="alert" className="mx-auto flex min-h-80 w-full max-w-xl flex-col items-center justify-center py-4 text-center sm:py-8">
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-guard-redSoft text-guard-red">
+        <AlertCircle aria-hidden="true" className="h-7 w-7" />
+      </span>
+      <h3 className="mt-5 text-xl font-semibold tracking-tight text-guard-ink">Starter set could not be generated</h3>
+      <p className="mt-2 max-w-lg text-sm leading-6 text-guard-text">{message}</p>
+      <p className="mt-2 text-sm text-guard-muted">Your existing Golden Dataset was not changed.</p>
+      <div className="mt-6 flex w-full flex-col-reverse justify-center gap-3 sm:w-auto sm:flex-row">
+        <button type="button" onClick={onClose} className="focus-ring min-h-10 rounded-lg border border-guard-lineStrong bg-white px-5 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">Close</button>
+        <button type="button" onClick={onRetry} className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover"><Sparkles aria-hidden="true" className="h-4 w-4" /> Try again</button>
+      </div>
+    </div>
   );
 }
 

@@ -347,3 +347,17 @@ final result: passed
 - P3: if the AI service frequently returns zero criteria in production, add server-side minimum-length validation to the structured response schema so that condition is surfaced as a generation error.
 
 final result: passed
+
+## Generate Starter Set Waiting Experience - July 22, 2026
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 22, 2026, 04_00_13 PM.png` (1456 x 1086 px).
+- Scope: immediate loading modal, elapsed-time status, indeterminate progress, responsive skeleton cards, inline retryable error, and in-place transition to the existing review UI.
+- Implementation review: the existing shared modal, LaunchGuard tokens, and Lucide icon family are preserved. The loading hierarchy follows the reference while the successful review-state markup remains unchanged.
+- Accessibility review: loading uses a polite status region; the error state uses an alert region; skeletons are hidden from assistive technology; buttons retain visible focus treatment; and custom animation stops under `prefers-reduced-motion`.
+- Request-lifecycle review: the selected prompt ID is captured before the request, retry reuses that ID, close/unmount abort the browser request, and an attempt guard prevents abandoned or stale responses from replacing a newer state.
+- Responsive source review: content is width-constrained rather than fixed, skeleton rows stack below the small breakpoint, the dialog body scrolls inside `90dvh`, and the header close action remains outside the scrolling body.
+- Validation: `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed.
+- Live visual QA limitation: the local Next.js server returned HTTP 200 for an isolated QA route, but the in-app browser blocked the local URL under its URL policy. The requested 1440 px, 768 px, 390 px, inline-error, and successful-transition screenshots could not be captured, and no reference/implementation composite comparison could be completed.
+- Reference deviations: standard application icons and the existing modal shell are used instead of recreating the reference's decorative artwork; the existing review modal width and contents remain unchanged because the reference applies only to the waiting state.
+
+final result: blocked
