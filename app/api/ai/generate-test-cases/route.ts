@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generatedTestCasesSchemaForVariables } from "@/lib/ai/schemas";
 import { getWorkspaceProject } from "@/lib/data";
-import { runStructuredOutput } from "@/lib/openai";
+import { runTestCaseStructuredOutput } from "@/lib/openai";
 import { createClient } from "@/lib/supabase/server";
 import { validateVariableSchema } from "@/lib/prompt-variables";
 import { fetchAllTestCaseInputs, prepareSuggestionVariableValues, uniqueGeneratedSuggestions } from "@/lib/test-cases";
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
     currentStage = "openai_request";
     const openAIRequestStart = performance.now();
-    const result = await runStructuredOutput({
+    const result = await runTestCaseStructuredOutput({
       schemaName: "generated_test_cases",
       schema: generatedTestCasesSchemaForVariables(variableSchema),
       instructions:
@@ -76,7 +76,7 @@ variable_values may contain only keys defined in the selected variable schema. V
 
 Do not reproduce, lightly reword, or create semantic duplicates of any existing Golden Dataset input. Do not create duplicates within the generated set.
 
-Each rationale should briefly explain what behavior, risk, boundary, or evaluation criterion the test case exercises.
+Each rationale must be one concise sentence of no more than 180 characters, including spaces, explaining the behavior, risk, boundary, or evaluation criterion the test case exercises.
 
 Return structured JSON only.`,
       input: JSON.stringify({

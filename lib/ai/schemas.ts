@@ -15,11 +15,16 @@ export const suggestedCriteriaSchema = z.object({
   criteria: z.array(suggestedCriterionSchema).max(3)
 });
 
+export const GENERATED_TEST_CASE_RATIONALE_MAX_LENGTH = 180;
+
 export const generatedTestCaseSchema = z.object({
   user_input: z.string().min(1),
   case_type: z.enum(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]),
   variable_values: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
-  rationale: z.string().min(1)
+  rationale: z
+    .string()
+    .min(1)
+    .max(GENERATED_TEST_CASE_RATIONALE_MAX_LENGTH)
 });
 
 export const generatedTestCasesSchema = z.object({
