@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const summary = await runStructuredOutput({
       schemaName: "error_analysis",
       schema: errorAnalysisSchema,
-      instructions: "Analyze reviewed AI output failures and return a concise structured error analysis for prompt improvement.",
+      instructions: "Analyze reviewed AI output failures and return a concise structured error analysis for prompt improvement. Every problematic example must include severity as a concise string, or null only when severity genuinely cannot be determined.",
       input: JSON.stringify({ project: context.project, current_prompt: prompt, criteria, reviewed_failures: reviewedFailures }, null, 2)
     });
     const { data: report, error } = await supabase
