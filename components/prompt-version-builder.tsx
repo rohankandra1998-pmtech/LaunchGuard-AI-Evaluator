@@ -8,6 +8,7 @@ import { HighlightedPromptPreview } from "@/components/highlighted-prompt-previe
 import { PromptVariableDialog } from "@/components/prompt-variable-dialog";
 import { PromptSyntaxEditor } from "@/components/prompt-syntax-editor";
 import { SubmitButton } from "@/components/submit-button";
+import { TextVariableTextArea, textVariableSpansFullWidth } from "@/components/text-variable-textarea";
 import { Badge, ButtonLink, Card, Select, TextArea, TextInput } from "@/components/ui";
 import { compilePromptPreview, extractPromptPlaceholders, findMalformedPlaceholders, findUnconfiguredPlaceholders, findUnusedVariables, promptVariableArraySchema } from "@/lib/prompt-variables";
 import type { PromptVariable } from "@/lib/types";
@@ -384,12 +385,13 @@ export function PromptVersionBuilder(props: PromptVersionBuilderProps) {
           {variables.length ? (
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               {variables.map((variable) => (
-                <VariableValueField
-                  key={variable.key}
-                  variable={variable}
-                  value={variableValues[variable.key]}
-                  onChange={(value) => setVariableValues((current) => ({ ...current, [variable.key]: value }))}
-                />
+                <div key={variable.key} className={textVariableSpansFullWidth(variable.type, variableValues[variable.key]) ? "md:col-span-2" : undefined}>
+                  <VariableValueField
+                    variable={variable}
+                    value={variableValues[variable.key]}
+                    onChange={(value) => setVariableValues((current) => ({ ...current, [variable.key]: value }))}
+                  />
+                </div>
               ))}
             </div>
           ) : (
@@ -627,15 +629,16 @@ function VariableValueField({ variable, value, onChange }: { variable: PromptVar
     </>
   );
 
-  if (variable.type === "long_text") {
+  if (variable.type === "text" || variable.type === "long_text") {
     return (
       <div>
         {fieldHeader}
-        <TextArea
+        <TextVariableTextArea
+          variableType={variable.type}
           id={inputId}
           value={String(displayValue ?? "")}
           onChange={(event) => onChange(event.target.value)}
-          className={"mt-2 min-h-24 " + (requiredMissing ? "border-guard-red hover:border-guard-red" : "")}
+          className={"mt-2 " + (requiredMissing ? "border-guard-red hover:border-guard-red" : "")}
           placeholder={defaultAvailable ? "Configured default will be used" : undefined}
           aria-invalid={requiredMissing}
           aria-describedby={describedBy}

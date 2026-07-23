@@ -26,6 +26,7 @@ import {
 import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase } from "@/app/actions";
 import { CopyButton } from "@/components/copy-button";
 import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
+import { TextVariableTextArea, textVariableSpansFullWidth } from "@/components/text-variable-textarea";
 import { VariableValuesReview } from "@/components/variable-values-review";
 import { cn } from "@/lib/utils";
 import { normalizeTestCaseInput, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
@@ -962,7 +963,25 @@ function StarterSuggestionCard({ suggestion, caseNumber, schema, error, onChange
 
 function VariableField({ variable, value, onChange, idPrefix = "test-case-variable" }: { variable: PromptVariable; value: string | number | boolean | null; onChange: (value: string | number | boolean | null) => void; idPrefix?: string }) {
   const inputId = `${idPrefix}-${variable.key}`;
-  return <div className={variable.type === "long_text" ? "sm:col-span-2" : ""}><label htmlFor={inputId} className="text-sm font-medium text-guard-text">{variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}</label>{variable.type === "long_text" ? <TextArea id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24" /> : variable.type === "boolean" ? <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select> : variable.type === "select" ? <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select> : <TextInput id={inputId} type={variable.type === "number" ? "number" : "text"} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(variable.type === "number" ? event.target.value === "" ? null : Number(event.target.value) : event.target.value)} className="mt-2" />}{variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}</div>;
+  const textType = variable.type === "text" || variable.type === "long_text";
+
+  return (
+    <div className={textVariableSpansFullWidth(variable.type, value) ? "sm:col-span-2" : ""}>
+      <label htmlFor={inputId} className="text-sm font-medium text-guard-text">
+        {variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}
+      </label>
+      {textType ? (
+        <TextVariableTextArea variableType={variable.type === "long_text" ? "long_text" : "text"} id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2" />
+      ) : variable.type === "boolean" ? (
+        <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select>
+      ) : variable.type === "select" ? (
+        <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select>
+      ) : (
+        <TextInput id={inputId} type="number" required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} className="mt-2" />
+      )}
+      {variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}
+    </div>
+  );
 }
 
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, Save, Trash2, X } from "lucide-react";
+import { TextVariableTextArea } from "@/components/text-variable-textarea";
 import { Select, TextArea, TextInput } from "@/components/ui";
 import { PROMPT_VARIABLE_KEY_PATTERN, promptVariableSchema, variableLabelFromKey } from "@/lib/prompt-variables";
 import type { PromptVariable, PromptVariableType } from "@/lib/types";
@@ -292,14 +293,14 @@ export function PromptVariableDialog({
                 </div>
                 {draft.type === "boolean" ? (
                   <Select id={defaultId} value={defaultValue} onChange={(event) => { setDefaultValue(event.target.value); clearError("default_value"); }} className={`mt-2 ${errors.default_value ? "border-guard-red hover:border-guard-red" : ""}`} aria-invalid={Boolean(errors.default_value)} aria-describedby={`${defaultHelpId}${errors.default_value ? ` ${defaultErrorId}` : ""}`}><option value="">No default</option><option value="true">True</option><option value="false">False</option></Select>
-                ) : draft.type === "long_text" ? (
-                  <TextArea id={defaultId} value={defaultValue} onChange={(event) => { setDefaultValue(event.target.value); clearError("default_value"); }} className={`mt-2 min-h-24 ${errors.default_value ? "border-guard-red hover:border-guard-red" : ""}`} aria-invalid={Boolean(errors.default_value)} aria-describedby={`${defaultHelpId}${errors.default_value ? ` ${defaultErrorId}` : ""}`} />
+                ) : draft.type === "text" || draft.type === "long_text" ? (
+                  <TextVariableTextArea variableType={draft.type} id={defaultId} value={defaultValue} onChange={(event) => { setDefaultValue(event.target.value); clearError("default_value"); }} className={`mt-2 ${errors.default_value ? "border-guard-red hover:border-guard-red" : ""}`} aria-invalid={Boolean(errors.default_value)} aria-describedby={`${defaultHelpId}${errors.default_value ? ` ${defaultErrorId}` : ""}`} />
                 ) : draft.type === "select" ? (
                   <Select id={defaultId} value={defaultValue} onChange={(event) => { setDefaultValue(event.target.value); clearError("default_value"); }} className={`mt-2 ${errors.default_value ? "border-guard-red hover:border-guard-red" : ""}`} aria-invalid={Boolean(errors.default_value)} aria-describedby={`${defaultHelpId}${errors.default_value ? ` ${defaultErrorId}` : ""}`}><option value="">No default</option>{parseOptions(options).map((option, index) => <option key={`${option}-${index}`} value={option}>{option}</option>)}</Select>
                 ) : (
                   <TextInput id={defaultId} type={draft.type === "number" ? "number" : "text"} value={defaultValue} onChange={(event) => { setDefaultValue(event.target.value); clearError("default_value"); }} className={`mt-2 ${errors.default_value ? "border-guard-red hover:border-guard-red" : ""}`} aria-invalid={Boolean(errors.default_value)} aria-describedby={`${defaultHelpId}${errors.default_value ? ` ${defaultErrorId}` : ""}`} />
                 )}
-                <p id={defaultHelpId} className="mt-1.5 text-xs text-guard-muted">{draft.required ? "This default satisfies the required variable when no test value is provided." : "The value used when no test value is provided."}</p>
+                <p id={defaultHelpId} className="mt-1.5 text-xs text-guard-muted">{draft.type === "text" || draft.type === "long_text" ? "Line breaks and spacing are preserved in the compiled prompt." : draft.required ? "This default satisfies the required variable when no test value is provided." : "The value used when no test value is provided."}</p>
                 {errors.default_value ? <p id={defaultErrorId} className="mt-1.5 text-xs font-medium text-guard-red">{errors.default_value}</p> : null}
               </div>
 
