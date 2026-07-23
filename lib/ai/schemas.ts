@@ -82,7 +82,28 @@ export const promptVNextSchema = z.object({
   change_summary: z.string(),
   added_rules: z.array(z.string()),
   changed_instructions: z.array(z.string()),
-  removed_instructions: z.array(z.string())
+  removed_instructions: z.array(z.string()),
+  change_annotations: z.array(
+    z.object({
+      change_id: z.string().min(1).max(80),
+      title: z.string().min(1).max(160),
+      change_type: z.enum(["add", "change", "remove"]),
+      before_text: z.string().max(6000).nullable(),
+      after_text: z.string().max(6000).nullable(),
+      rationale: z.string().min(1).max(1600),
+      expected_impact: z.string().min(1).max(1600),
+      related_pattern_ids: z.array(z.string().min(1).max(80)).max(10),
+      related_test_case_ids: z.array(z.string().min(1)).max(20),
+      affected_criteria: z.array(z.string().min(1).max(160)).max(12)
+    }).superRefine((annotation, context) => {
+      if (annotation.change_type !== "add" && !annotation.before_text) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["before_text"], message: "Changed and removed content needs a before excerpt." });
+      }
+      if (annotation.change_type !== "remove" && !annotation.after_text) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["after_text"], message: "Added and changed content needs an after excerpt." });
+      }
+    })
+  ).max(10)
 });
 
 export type SuggestedCriteriaResponse = z.infer<typeof suggestedCriteriaSchema>;

@@ -3,25 +3,20 @@
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { EllipsisVertical, Trash2 } from "lucide-react";
-import { deleteErrorAnalysisReport, savePromptDraft } from "@/app/actions";
-import { SubmitButton } from "@/components/submit-button";
-import { Badge, Card, EmptyState, Label, TextArea } from "@/components/ui";
+import { deleteErrorAnalysisReport } from "@/app/actions";
+import { PromptVNextDiffWorkspace, type PromptVNextApiResponse } from "@/components/prompt-vnext-diff-workspace";
+import { Badge, Card, EmptyState } from "@/components/ui";
 import { errorAnalysisSchema, type ErrorAnalysisResponse } from "@/lib/ai/schemas";
 import type { ErrorAnalysisReport } from "@/lib/types";
 
-type PromptDraft = {
-  improved_system_prompt: string;
-  change_summary: string;
-  added_rules: string[];
-  changed_instructions: string[];
-  removed_instructions: string[];
-};
-
 export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { workspaceSlug: string; projectId: string; reports: ErrorAnalysisReport[] }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<PromptDraft | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PromptVNextApiResponse | null>(null);
+  const [analysisPending, startAnalysisTransition] = useTransition();
+  const [proposalPending, startProposalTransition] = useTransition();
+  const proposalInFlightRef = useRef(false);
   const [openMenuReportId, setOpenMenuReportId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ErrorAnalysisReport | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -31,30 +26,43 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   const historyHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   function summarize() {
-    setError(null);
-    startTransition(async () => {
-      const res = await fetch("/api/ai/error-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
-      });
-      const json = await res.json();
-      if (!res.ok) setError(json.error || "Could not summarize error analysis.");
-      else router.refresh();
+    if (analysisPending) return;
+    setAnalysisError(null);
+    startAnalysisTransition(async () => {
+      try {
+        const res = await fetch("/api/ai/error-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
+        });
+        const json = await res.json();
+        if (!res.ok) setAnalysisError(json.error || "Could not summarize error analysis.");
+        else router.refresh();
+      } catch {
+        setAnalysisError("Could not summarize Error Analysis. Check your connection and try again.");
+      }
     });
   }
 
   function createPrompt() {
-    setError(null);
-    startTransition(async () => {
-      const res = await fetch("/api/ai/create-prompt-version", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
-      });
-      const json = await res.json();
-      if (!res.ok) setError(json.error || "Could not create prompt vNext.");
-      else setDraft(json);
+    if (proposalPending || proposalInFlightRef.current) return;
+    proposalInFlightRef.current = true;
+    setProposalError(null);
+    startProposalTransition(async () => {
+      try {
+        const res = await fetch("/api/ai/create-prompt-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
+        });
+        const json = await res.json();
+        if (!res.ok) setProposalError(json.error || "Could not generate the Prompt vNext proposal.");
+        else setDraft(json as PromptVNextApiResponse);
+      } catch {
+        setProposalError("Could not generate the Prompt vNext proposal. Check your connection and try again.");
+      } finally {
+        proposalInFlightRef.current = false;
+      }
     });
   }
 
@@ -100,44 +108,55 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
 
   return (
     <>
-      <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-      <Card>
-        <h2 className="text-lg font-semibold text-guard-ink">Error Analysis</h2>
-        <p className="mt-2 text-sm text-guard-muted">GPT-5 summarizes reviewed failed or average test cases only.</p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button onClick={summarize} disabled={pending} className="focus-ring rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
-            {pending ? "Working..." : "Summarize Error Analysis"}
-          </button>
-          <button onClick={createPrompt} disabled={pending || !latest} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:text-slate-400">
-            Create Prompt vNext
-          </button>
-        </div>
-        {error ? <p className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{error}</p> : null}
-        <div className="mt-6">
-          {latest ? <ReportBlock report={latest} /> : <EmptyState title="No reports yet">Run error analysis after completing human reviews.</EmptyState>}
-        </div>
-      </Card>
-
-      <Card>
-        <h2 className="text-lg font-semibold text-guard-ink">Prompt vNext draft</h2>
-        {draft ? (
-          <form action={savePromptDraft} className="mt-4 grid gap-4">
-            <input type="hidden" name="project_id" value={projectId} />
-            <input type="hidden" name="workspace_slug" value={workspaceSlug} />
-            <div><Label>Change summary</Label><TextArea name="change_summary" defaultValue={draft.change_summary} /></div>
-            <div><Label>Improved system prompt</Label><TextArea name="system_prompt" className="min-h-96 font-mono" defaultValue={draft.improved_system_prompt} /></div>
-            <div className="rounded-lg border border-guard-line bg-guard-surfaceMuted p-4 text-sm text-guard-text">
-              <p className="font-medium text-guard-ink">Added rules</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">{draft.added_rules.map((rule) => <li key={rule}>{rule}</li>)}</ul>
+      <div className="space-y-6">
+        <div className={draft ? "space-y-6" : "grid gap-6 lg:grid-cols-[0.95fr_1.05fr]"}>
+          <Card>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-guard-ink">Error Analysis</h2>
+                <p className="mt-2 text-sm text-guard-muted">GPT-5 summarizes reviewed failed or average test cases only.</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button type="button" onClick={summarize} disabled={analysisPending} className="focus-ring rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
+                  {analysisPending ? "Summarizing Error Analysis..." : "Summarize Error Analysis"}
+                </button>
+                <button type="button" onClick={createPrompt} disabled={proposalPending || !latest} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:text-slate-400">
+                  {proposalPending ? "Generating Prompt vNext proposal..." : "Create Prompt vNext"}
+                </button>
+              </div>
             </div>
-            <SubmitButton pendingText="Saving draft...">Save as next prompt version</SubmitButton>
-          </form>
-        ) : (
-          <EmptyState title="No prompt draft">Create Prompt vNext after an error analysis report is available.</EmptyState>
-        )}
-      </Card>
+            {analysisError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{analysisError}</p> : null}
+            {proposalError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
+            <div className="mt-6">
+              {latest ? <ReportBlock report={latest} /> : <EmptyState title="No reports yet">Run error analysis after completing human reviews.</EmptyState>}
+            </div>
+          </Card>
 
-      <div className="lg:col-span-2">
+          {draft ? (
+            <PromptVNextDiffWorkspace
+              data={draft}
+              workspaceSlug={workspaceSlug}
+              projectId={projectId}
+              onDiscard={() => setDraft(null)}
+            />
+          ) : (
+            <Card>
+              <h2 className="text-lg font-semibold text-guard-ink">Prompt vNext draft</h2>
+              <div className="mt-4">
+                {proposalPending ? (
+                  <div aria-live="polite" className="rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center">
+                    <p className="text-base font-semibold text-guard-ink">Generating Prompt vNext proposal…</p>
+                    <p className="mt-2 text-sm text-guard-muted">Grounding changes in the latest reviewed failures and current prompt.</p>
+                  </div>
+                ) : (
+                  <EmptyState title="No prompt draft">Create Prompt vNext after an error analysis report is available.</EmptyState>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
+
+      <div>
         <Card>
           <h2 ref={historyHeadingRef} tabIndex={-1} className="text-lg font-semibold text-guard-ink">Previous reports</h2>
           <div className="mt-4 space-y-4">
