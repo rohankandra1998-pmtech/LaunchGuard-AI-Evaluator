@@ -92,7 +92,7 @@ export async function POST(request: Request) {
       results.push({ id: testCase.id, output });
     }
 
-    revalidateProjectActivityPaths(workspace_slug, project_id, "/dataset", "/results");
+    revalidateProjectActivityPaths(workspace_slug, project_id, "/dataset");
     return NextResponse.json({ run_id: run.id, results });
   } catch (error) {
     const status = error instanceof PromptVariableError ? 400 : 500;

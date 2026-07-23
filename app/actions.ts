@@ -519,7 +519,7 @@ export async function saveTestCase(formData: FormData) {
       .eq("project_id", projectId);
     if (reviewError) throw reviewError;
   }
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function saveGeneratedTestCases(workspaceSlug: string, projectId: string, promptVersionId: string, cases: PreparedGeneratedSuggestion[]) {
@@ -661,7 +661,7 @@ export async function saveHumanReview(formData: FormData) {
 
   const { error: testCaseError } = await supabase.from("test_cases").update({ status: "reviewed" }).eq("id", testCaseId).eq("project_id", projectId);
   if (testCaseError) throw testCaseError;
-  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset", "/results");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
 export async function savePromptDraft(formData: FormData) {

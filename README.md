@@ -9,7 +9,7 @@ The product is organized as:
 1. Public workspace directory.
 2. Individual public workspace.
 3. AI evaluation projects inside each workspace.
-4. Prompt versions, criteria, a unified Golden Dataset and human-review workspace, results, reports, and CSV export inside each project.
+4. Prompt versions, criteria, a unified Golden Dataset and human-review workspace, reports, and CSV export inside each project.
 
 This prototype has no authentication, ownership roles, invitations, private workspaces, request quotas, or usage caps. All workspaces and project data are publicly readable and publicly editable through the publishable Supabase key.
 
@@ -155,7 +155,6 @@ npm run build
 - `/workspaces/[workspaceSlug]/projects/[projectId]/criteria`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/dataset` - primary test-case, output-generation, and human-review workflow
 - `/workspaces/[workspaceSlug]/projects/[projectId]/review` - backward-compatible server redirect to `/dataset`
-- `/workspaces/[workspaceSlug]/projects/[projectId]/results`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/reports`
 
 ## Server API Routes
