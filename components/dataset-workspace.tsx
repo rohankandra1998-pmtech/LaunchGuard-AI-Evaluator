@@ -26,6 +26,7 @@ import {
 import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase } from "@/app/actions";
 import { CopyButton } from "@/components/copy-button";
 import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
+import { VariableValuesReview } from "@/components/variable-values-review";
 import { cn } from "@/lib/utils";
 import { normalizeTestCaseInput, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
 import type {
@@ -672,6 +673,14 @@ function ReviewPanel({
             {selected.user_input}
           </div>
         </div>
+
+        <VariableValuesReview
+          key={selected.id}
+          testCaseId={selected.id}
+          variableValues={selected.variable_values || {}}
+          variableSchema={prompt?.variable_schema || []}
+          hasGeneratedOutput={Boolean(selected.generated_ai_output) && Boolean(selected.prompt_version_id)}
+        />
 
         {hasOutput ? (
           <div>
