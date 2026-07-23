@@ -13,6 +13,7 @@ import {
   Info,
   Lightbulb,
   Loader2,
+  PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Play,
@@ -507,7 +508,10 @@ export function DatasetWorkspace({
                 <h2 id="queue-title" className="font-semibold text-guard-ink">Test Case Queue</h2>
                 <Badge tone="primary">{testCases.length}</Badge>
               </div>
-              <button type="button" onClick={() => setCaseDialog({ mode: "add", testCase: null })} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-guard-primaryLine bg-white px-2.5 py-1.5 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft"><Plus className="h-3.5 w-3.5" /> Add</button>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setCaseDialog({ mode: "add", testCase: null })} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-guard-primaryLine bg-white px-2.5 py-1.5 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft"><Plus className="h-3.5 w-3.5" /> Add</button>
+                {variableValuesOpen && queueExpanded ? <button type="button" aria-label="Minimize test case queue" title="Minimize test case queue" onClick={() => setQueueExpanded(false)} className="focus-ring hidden rounded-md p-1.5 text-guard-muted transition hover:bg-guard-primarySoft hover:text-guard-primary 2xl:inline-flex"><PanelLeftClose aria-hidden="true" className="h-4 w-4" /></button> : null}
+              </div>
             </div>
             <p className="mt-2 text-xs text-guard-muted"><span className="font-semibold text-guard-amber">{readyCount}</span> ready · <span className="font-semibold text-guard-green">{reviewedCount}</span> reviewed</p>
             <div className="relative mt-4">
