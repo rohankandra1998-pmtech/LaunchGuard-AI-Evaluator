@@ -79,19 +79,17 @@ function buildCopyAllText(variables: NormalizedVariable[]) {
 
 export function VariableValuesReview({ testCaseId, variableValues, variableSchema, hasGeneratedOutput }: VariableValuesReviewProps) {
   const variables = useMemo(() => normalizeVariables(variableSchema, variableValues), [variableSchema, variableValues]);
-  const [selectedKey, setSelectedKey] = useState(variables[0]?.key || "");
+  const [selectedKey, setSelectedKey] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("focused");
   const [search, setSearch] = useState("");
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set(variables[0] ? [variables[0].key] : []));
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [mounted, setMounted] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const pillScrollerRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  const selectedVariable = variables.find((variable) => variable.key === selectedKey) || variables[0];
 
   useEffect(() => setMounted(true), []);
 
@@ -166,7 +164,7 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
           <button type="button" aria-label="Scroll variables left" disabled={!canScrollLeft} onClick={() => pillScrollerRef.current?.scrollBy({ left: -240, behavior: "smooth" })} className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-guard-line bg-white text-guard-muted transition hover:border-guard-primaryLine hover:text-guard-primary disabled:cursor-default disabled:opacity-30"><ChevronLeft aria-hidden="true" className="h-4 w-4" /></button>
           <div ref={pillScrollerRef} className="flex min-w-0 flex-1 touch-pan-x gap-2 overflow-x-auto py-1" aria-label="Test case variables">
             {variables.map((variable) => {
-              const selected = variable.key === selectedVariable?.key;
+              const selected = variable.key === selectedKey;
               return (
                 <button
                   key={variable.key}
@@ -184,21 +182,13 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
           <button type="button" aria-label="Scroll variables right" disabled={!canScrollRight} onClick={() => pillScrollerRef.current?.scrollBy({ left: 240, behavior: "smooth" })} className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-guard-line bg-white text-guard-muted transition hover:border-guard-primaryLine hover:text-guard-primary disabled:cursor-default disabled:opacity-30"><ChevronRight aria-hidden="true" className="h-4 w-4" /></button>
         </div>
 
-        {selectedVariable ? (
-          <div className="relative mt-2 rounded-lg border border-guard-line bg-white px-3 py-3 pr-14">
-            <button type="button" onClick={(event) => openFocused(selectedVariable, event.currentTarget)} className="focus-ring block w-full rounded-md text-left">
-              <span className="block text-xs font-semibold text-guard-ink">{selectedVariable.label}</span>
-              <span className={cn("mt-1 block break-words whitespace-pre-line text-sm leading-5", hasActualValue(selectedVariable.value) ? "line-clamp-3 text-guard-text" : "italic text-guard-muted")}>{formatVariableValue(selectedVariable.value)}</span>
-            </button>
-            <CopyButton text={hasActualValue(selectedVariable.value) ? formatVariableValue(selectedVariable.value) : ""} disabled={!hasActualValue(selectedVariable.value)} contextLabel={`${selectedVariable.label} variable value`} iconOnly className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2" />
-          </div>
-        ) : null}
+        <p className="mt-2 px-1 text-xs leading-5 text-guard-muted">Select a variable to view its full value.</p>
       </div>
 
       {mounted && drawerOpen ? createPortal(
         <VariableValuesDrawer
           variables={variables}
-          selectedKey={selectedVariable?.key || ""}
+          selectedKey={selectedKey}
           mode={drawerMode}
           search={search}
           expandedKeys={expandedKeys}
