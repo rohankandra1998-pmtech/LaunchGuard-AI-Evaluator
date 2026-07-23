@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -13,9 +13,12 @@ import {
   Info,
   Lightbulb,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Play,
   Plus,
+  Rows3,
   Search,
   Sparkles,
   ThumbsDown,
@@ -26,6 +29,8 @@ import {
 import { deleteTestCase, saveGeneratedTestCases, saveHumanReview, saveTestCase } from "@/app/actions";
 import { CopyButton } from "@/components/copy-button";
 import { Badge, EmptyState, Label, Select, TextArea, TextInput } from "@/components/ui";
+import { TextVariableTextArea, textVariableSpansFullWidth } from "@/components/text-variable-textarea";
+import { VariableValuesReview } from "@/components/variable-values-review";
 import { cn } from "@/lib/utils";
 import { normalizeTestCaseInput, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
 import type {
@@ -48,6 +53,11 @@ const statusLabels: Record<TestCaseStatus, string> = {
   reviewed: "Reviewed"
 };
 const statusTones = { draft: "neutral", generated: "average", reviewed: "good" } as const;
+const statusDotStyles: Record<TestCaseStatus, string> = {
+  draft: "bg-slate-400",
+  generated: "bg-guard-amber",
+  reviewed: "bg-guard-green"
+};
 const typeTones: Record<string, "neutral" | "primary" | "average" | "bad" | "good"> = {
   normal: "good",
   edge: "primary",
@@ -139,6 +149,8 @@ export function DatasetWorkspace({
   const initialCase = testCases.find((testCase) => testCase.status === "generated") || testCases[0];
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState(initialCase?.id || "");
+  const [variableValuesOpen, setVariableValuesOpen] = useState(false);
+  const [queueExpanded, setQueueExpanded] = useState(false);
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -156,6 +168,17 @@ export function DatasetWorkspace({
   const [starterElapsedSeconds, setStarterElapsedSeconds] = useState(0);
   const starterAttemptRef = useRef(0);
   const starterRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+
+  const handleVariableValuesOpenChange = useCallback((open: boolean) => {
+    setVariableValuesOpen(open);
+    setQueueExpanded(false);
+  }, []);
+
+  function selectCase(id: string) {
+    setVariableValuesOpen(false);
+    setQueueExpanded(false);
+    setSelectedCaseId(id);
+  }
 
   const visibleCases = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -200,8 +223,13 @@ export function DatasetWorkspace({
   useEffect(() => {
     if (selectedCaseId && visibleCases.some((testCase) => testCase.id === selectedCaseId)) return;
     const fallback = visibleCases.find((testCase) => testCase.status === "generated") || visibleCases[0];
-    setSelectedCaseId(fallback?.id || "");
+    selectCase(fallback?.id || "");
   }, [selectedCaseId, visibleCases]);
+
+  useEffect(() => {
+    setVariableValuesOpen(false);
+    setQueueExpanded(false);
+  }, [selectedCaseId]);
 
   useEffect(() => {
     setSelectedIds((current) => current.filter((id) => testCases.some((testCase) => testCase.id === id)));
@@ -256,7 +284,7 @@ export function DatasetWorkspace({
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Could not run AI outputs.");
       setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
-      setSelectedCaseId(ids[0]);
+      selectCase(ids[0]);
       setToast({ tone: "success", message: ids.length === 1 ? "AI output generated. This case is ready to review." : `${ids.length} AI outputs generated and ready to review.` });
       router.refresh();
     } catch (error) {
@@ -427,15 +455,63 @@ export function DatasetWorkspace({
         </div>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.7fr)]">
-        <section aria-labelledby="queue-title" className="overflow-hidden rounded-xl border border-guard-line bg-white shadow-card">
+      <div className={cn(
+        "grid items-start gap-4 transition-[grid-template-columns] duration-200 motion-reduce:transition-none lg:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.7fr)]",
+        variableValuesOpen && (queueExpanded
+          ? "2xl:grid-cols-[minmax(20rem,0.8fr)_minmax(0,1.7fr)_26rem]"
+          : "2xl:grid-cols-[6.5rem_minmax(0,1fr)_26rem]")
+      )}>
+        {variableValuesOpen && !queueExpanded ? (
+          <section aria-labelledby="compact-queue-title" className="hidden overflow-hidden rounded-xl border border-guard-line bg-white shadow-card 2xl:block">
+            <div className="border-b border-guard-line px-2 py-3">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Rows3 aria-hidden="true" className="h-4 w-4 shrink-0 text-guard-primary" />
+                  <span id="compact-queue-title" className="sr-only">Test Case Queue</span>
+                  <span className="text-xs font-semibold text-guard-ink">{testCases.length}</span>
+                </span>
+                <button type="button" aria-label="Expand test case queue" title="Expand test case queue" onClick={() => setQueueExpanded(true)} className="focus-ring rounded-md p-1.5 text-guard-muted transition hover:bg-guard-primarySoft hover:text-guard-primary"><PanelLeftOpen aria-hidden="true" className="h-4 w-4" /></button>
+              </div>
+            </div>
+
+            {pageCases.length ? (
+              <div>
+                {pageCases.map((testCase, index) => {
+                  const active = selectedCase?.id === testCase.id;
+                  const statusLabel = statusLabels[testCase.status];
+                  return (
+                    <div key={testCase.id} className={cn("border-b border-l-2 border-guard-line px-2 py-2.5 transition", active ? "border-l-guard-primary bg-guard-primarySoft" : "border-l-transparent bg-white hover:bg-guard-surfaceMuted/70")}>
+                      <div className="flex items-center gap-2">
+                        <input aria-label={`Select ${compactCaseId(testCase.id)} to run`} type="checkbox" checked={selectedIds.includes(testCase.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, testCase.id] : current.filter((id) => id !== testCase.id))} className="h-4 w-4 shrink-0 rounded border-guard-lineStrong accent-guard-primary" />
+                        <button type="button" aria-current={active ? "true" : undefined} aria-label={`Review test case ${(page - 1) * PAGE_SIZE + index + 1}: ${testCase.user_input}. Status: ${statusLabel}`} title={`${testCase.user_input} — ${statusLabel}`} onClick={() => selectCase(testCase.id)} className="focus-ring min-w-0 flex-1 rounded-md text-left">
+                          <span className="block text-sm font-semibold text-guard-ink">{(page - 1) * PAGE_SIZE + index + 1}</span>
+                          <span className="mt-0.5 flex items-center gap-1 text-[10px] leading-4 text-guard-muted"><span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", statusDotStyles[testCase.status])} />{testCase.status === "generated" ? "Ready" : statusLabel}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <p className="px-2 py-5 text-center text-xs text-guard-muted">No cases</p>}
+
+            <div className="px-2 py-3 text-center text-[10px] text-guard-muted">
+              <span>{visibleCases.length ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, visibleCases.length)} of ${visibleCases.length}` : "0 cases"}</span>
+              {pageCount > 1 ? <div className="mt-2 flex items-center justify-center gap-1"><button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="focus-ring rounded-md p-1.5 hover:bg-guard-primarySoft disabled:opacity-35"><ChevronLeft className="h-3.5 w-3.5" /></button><button type="button" aria-label="Next page" disabled={page >= pageCount} onClick={() => setPage((current) => current + 1)} className="focus-ring rounded-md p-1.5 hover:bg-guard-primarySoft disabled:opacity-35"><ChevronRight className="h-3.5 w-3.5" /></button></div> : null}
+            </div>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="queue-title" className={cn("overflow-hidden rounded-xl border border-guard-line bg-white shadow-card", variableValuesOpen && !queueExpanded && "2xl:hidden")}>
           <div className="border-b border-guard-line px-4 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <h2 id="queue-title" className="font-semibold text-guard-ink">Test Case Queue</h2>
                 <Badge tone="primary">{testCases.length}</Badge>
               </div>
-              <button type="button" onClick={() => setCaseDialog({ mode: "add", testCase: null })} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-guard-primaryLine bg-white px-2.5 py-1.5 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft"><Plus className="h-3.5 w-3.5" /> Add</button>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setCaseDialog({ mode: "add", testCase: null })} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-guard-primaryLine bg-white px-2.5 py-1.5 text-xs font-semibold text-guard-primaryHover transition hover:bg-guard-primarySoft"><Plus className="h-3.5 w-3.5" /> Add</button>
+                {variableValuesOpen && queueExpanded ? <button type="button" aria-label="Minimize test case queue" title="Minimize test case queue" onClick={() => setQueueExpanded(false)} className="focus-ring hidden rounded-md p-1.5 text-guard-muted transition hover:bg-guard-primarySoft hover:text-guard-primary 2xl:inline-flex"><PanelLeftClose aria-hidden="true" className="h-4 w-4" /></button> : null}
+              </div>
             </div>
             <p className="mt-2 text-xs text-guard-muted"><span className="font-semibold text-guard-amber">{readyCount}</span> ready · <span className="font-semibold text-guard-green">{reviewedCount}</span> reviewed</p>
             <div className="relative mt-4">
@@ -469,7 +545,7 @@ export function DatasetWorkspace({
                     onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, testCase.id] : current.filter((id) => id !== testCase.id))}
                     className="h-4 w-4 rounded border-guard-lineStrong accent-guard-primary"
                   />
-                  <button type="button" onClick={() => setSelectedCaseId(testCase.id)} className="focus-ring min-w-0 rounded-md text-left">
+                  <button type="button" onClick={() => selectCase(testCase.id)} className="focus-ring min-w-0 rounded-md text-left">
                     <span className="line-clamp-2 text-sm leading-5 text-guard-ink">{testCase.user_input}</span>
                     <span className="mt-1 block text-[11px] text-guard-muted">{compactCaseId(testCase.id)} · {caseTypeLabel(testCase.case_type)}</span>
                   </button>
@@ -505,15 +581,17 @@ export function DatasetWorkspace({
           ratings={ratings}
           promptVersions={promptVersions}
           busy={busy}
+          onVariableValuesOpenChange={handleVariableValuesOpenChange}
           onRun={(id) => runCases([id])}
           onSaved={() => {
             setToast({ tone: "success", message: selectedCase?.status === "reviewed" ? "Review updated." : "Case marked as reviewed." });
             router.refresh();
           }}
           onError={(message) => setToast({ tone: "error", message })}
-          onPrevious={selectedIndex > 0 ? () => setSelectedCaseId(visibleCases[selectedIndex - 1].id) : undefined}
-          onNext={selectedIndex >= 0 && selectedIndex < visibleCases.length - 1 ? () => setSelectedCaseId(visibleCases[selectedIndex + 1].id) : undefined}
+          onPrevious={selectedIndex > 0 ? () => selectCase(visibleCases[selectedIndex - 1].id) : undefined}
+          onNext={selectedIndex >= 0 && selectedIndex < visibleCases.length - 1 ? () => selectCase(visibleCases[selectedIndex + 1].id) : undefined}
         />
+        <div id="variable-values-dock" className={variableValuesOpen ? "hidden min-w-0 2xl:block" : "hidden"} />
       </div>
 
       {caseDialog ? (
@@ -629,6 +707,7 @@ function ReviewPanel({
   promptVersions,
   busy,
   onRun,
+  onVariableValuesOpenChange,
   onSaved,
   onError,
   onPrevious,
@@ -643,6 +722,7 @@ function ReviewPanel({
   promptVersions: PromptVersion[];
   busy: string | null;
   onRun: (id: string) => void;
+  onVariableValuesOpenChange: (open: boolean) => void;
   onSaved: () => void;
   onError: (message: string) => void;
   onPrevious?: () => void;
@@ -672,6 +752,15 @@ function ReviewPanel({
             {selected.user_input}
           </div>
         </div>
+
+        <VariableValuesReview
+          key={selected.id}
+          testCaseId={selected.id}
+          variableValues={selected.variable_values || {}}
+          variableSchema={prompt?.variable_schema || []}
+          hasGeneratedOutput={Boolean(selected.generated_ai_output) && Boolean(selected.prompt_version_id)}
+          onOpenChange={onVariableValuesOpenChange}
+        />
 
         {hasOutput ? (
           <div>
@@ -953,7 +1042,25 @@ function StarterSuggestionCard({ suggestion, caseNumber, schema, error, onChange
 
 function VariableField({ variable, value, onChange, idPrefix = "test-case-variable" }: { variable: PromptVariable; value: string | number | boolean | null; onChange: (value: string | number | boolean | null) => void; idPrefix?: string }) {
   const inputId = `${idPrefix}-${variable.key}`;
-  return <div className={variable.type === "long_text" ? "sm:col-span-2" : ""}><label htmlFor={inputId} className="text-sm font-medium text-guard-text">{variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}</label>{variable.type === "long_text" ? <TextArea id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-24" /> : variable.type === "boolean" ? <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select> : variable.type === "select" ? <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select> : <TextInput id={inputId} type={variable.type === "number" ? "number" : "text"} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(variable.type === "number" ? event.target.value === "" ? null : Number(event.target.value) : event.target.value)} className="mt-2" />}{variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}</div>;
+  const textType = variable.type === "text" || variable.type === "long_text";
+
+  return (
+    <div className={textVariableSpansFullWidth(variable.type, value) ? "sm:col-span-2" : ""}>
+      <label htmlFor={inputId} className="text-sm font-medium text-guard-text">
+        {variable.label}{variable.required ? <span className="text-guard-red"> *</span> : null}
+      </label>
+      {textType ? (
+        <TextVariableTextArea variableType={variable.type === "long_text" ? "long_text" : "text"} id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2" />
+      ) : variable.type === "boolean" ? (
+        <Select id={inputId} required={variable.required} value={value === true || value === "true" ? "true" : value === false || value === "false" ? "false" : ""} onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")} className="mt-2"><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></Select>
+      ) : variable.type === "select" ? (
+        <Select id={inputId} required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} className="mt-2"><option value="">Select an option</option>{variable.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select>
+      ) : (
+        <TextInput id={inputId} type="number" required={variable.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} className="mt-2" />
+      )}
+      {variable.description ? <p className="mt-1 text-xs leading-5 text-guard-muted">{variable.description}</p> : null}
+    </div>
+  );
 }
 
 

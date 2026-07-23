@@ -361,3 +361,73 @@ final result: passed
 - Reference deviations: standard application icons and the existing modal shell are used instead of recreating the reference's decorative artwork; the existing review modal width and contents remain unchanged because the reference applies only to the waiting state.
 
 final result: blocked
+
+## Variable Values Review Drawer - July 22, 2026
+
+## Evidence
+
+- Source visual truth: `C:\Users\Rohan\Downloads\ChatGPT Image Jul 22, 2026, 05_58_30 PM.png`
+- Browser-rendered implementation: `artifacts/qa-implementation-desktop.png`
+- Mobile implementation: `artifacts/qa-implementation-mobile.png`
+- Full-view comparison: `artifacts/qa-comparison-desktop.png`
+- Focused drawer comparison: `artifacts/qa-comparison-variable-drawer.png`
+- Focused inline-section comparison: `artifacts/qa-comparison-variable-inline.png`
+- Desktop viewport and pixels: 1680 x 941 CSS px, 1680 x 941 screenshot pixels, 1x density.
+- Mobile viewport: requested 390 x 844; browser content measured 375 CSS px wide because of in-app browser chrome. The drawer measured 374.67 px and the body scroll width measured 375 px.
+- State: Golden Dataset with the Variable Values drawer open in View all values mode.
+- Data note: the source mock shows six populated variables. The available generated test case contains two schema variables with missing stored values, so the implementation truthfully shows two `No value provided` states rather than substituting mock or prompt-default data.
+
+## Findings
+
+- No actionable P0, P1, or P2 issues remain.
+- Fonts and typography: the implementation uses LaunchGuard's existing font stack, weights, hierarchy, truncation, and line-height conventions. Drawer headings, secondary keys, badges, and read-only values preserve the reference hierarchy.
+- Spacing and layout rhythm: the inline header, pill strip, preview card, drawer header, search, card stack, and read-only notice follow the reference structure while retaining the existing Review Panel's roomier proportions as required.
+- Colors and visual tokens: all surfaces, borders, focus states, badges, and selected states use existing `guard` tokens. The purple selected treatment, neutral cards, and subtle elevation match the reference direction.
+- Image quality and asset fidelity: the target contains no raster product imagery. Existing Lucide icons are used consistently with the codebase; no placeholder, CSS-drawn, or improvised image assets were introduced.
+- Copy and content: required labels, subtitle, search placeholder, missing-value text, copy labels, and generated/draft read-only notices match the specification.
+- Responsive behavior: desktop drawer width is 420 px; tablet width is 82vw; mobile width fills the content viewport without page-level horizontal overflow. The pill row reports `overflow-x: auto`.
+- Accessibility and interaction: the drawer is a labeled dialog-like aside, close receives focus, Escape closes and restores focus to the opener, pills expose `aria-pressed`, cards expose `aria-expanded`, and all controls retain visible focus styling.
+
+## Full-view Comparison Evidence
+
+`artifacts/qa-comparison-desktop.png` shows the reference and implementation at the same 1680 x 941 pixel size. The implementation preserves the existing LaunchGuard shell, queue, Review Panel density, and evaluation controls while matching the requested Variable Values hierarchy and overlay behavior.
+
+## Focused-region Comparison Evidence
+
+- `artifacts/qa-comparison-variable-drawer.png` confirms the drawer title/subtitle, search, count/copy row, selected card treatment, expandable cards, value containers, and bottom read-only notice.
+- `artifacts/qa-comparison-variable-inline.png` confirms the inline title/count, single-row pills, purple selection, arrows, and selected-value preview. The implementation is intentionally taller than the reference because the request explicitly preserves the current Review Panel spacing.
+
+## Primary Interactions Tested
+
+- Opened a variable pill into focused-variable mode; selected variable moved first and expanded while the other variable remained collapsed.
+- Opened View all values; all available cards expanded.
+- Searched case-insensitively by human label, technical key, and stored value.
+- Copied one complete stored value and copied all values in ordered plain-text format.
+- Closed with Escape and confirmed focus returned to View all values.
+- Switched test cases while the drawer was open and confirmed the old drawer closed and the new case selected its first available variable.
+- Verified generated and draft read-only wording.
+- Confirmed zero browser console errors.
+
+## Comparison History
+
+1. Initial pass found a P2 responsive mismatch: the drawer stayed capped at 420 px on tablet instead of using approximately 70-85% of the viewport.
+2. Updated the drawer to `sm:w-[82vw] lg:w-[420px]`.
+3. Post-fix evidence measured the drawer at 672.40 px in an 805 px tablet content viewport (83.5% after browser scrollbar accounting), 420 px on desktop, and 374.67 px in a 375 px mobile content viewport. No actionable P0/P1/P2 findings remained.
+
+## Open Questions
+
+- None. Differences in variable count, names, and values come from the exact stored test-case data and are intentional.
+
+## Implementation Checklist
+
+- [x] Preserve the existing application shell and Golden Dataset layout.
+- [x] Match the reference's inline variable hierarchy and overlay drawer.
+- [x] Preserve exact stored values and truthful missing states.
+- [x] Verify focused, view-all, search, copy, keyboard, case-switch, and responsive behaviors.
+- [x] Confirm no browser console errors.
+
+## Follow-up Polish
+
+- No P3 follow-up is required for this scoped implementation.
+
+final result: passed
