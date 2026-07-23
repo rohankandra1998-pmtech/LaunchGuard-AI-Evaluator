@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Search, Tag, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { Badge, TextInput } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ type VariableValuesReviewProps = {
   variableValues: Record<string, VariableValue>;
   variableSchema: PromptVariable[];
   hasGeneratedOutput: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 const typeLabels: Record<PromptVariable["type"], string> = {
@@ -77,7 +78,7 @@ function buildCopyAllText(variables: NormalizedVariable[]) {
   return variables.map((variable) => `${variable.label}\n{{${variable.key}}}\n${formatVariableValue(variable.value)}`).join("\n\n");
 }
 
-export function VariableValuesReview({ testCaseId, variableValues, variableSchema, hasGeneratedOutput }: VariableValuesReviewProps) {
+export function VariableValuesReview({ testCaseId, variableValues, variableSchema, hasGeneratedOutput, onOpenChange }: VariableValuesReviewProps) {
   const variables = useMemo(() => normalizeVariables(variableSchema, variableValues), [variableSchema, variableValues]);
   const [selectedKey, setSelectedKey] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -85,13 +86,28 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
   const [search, setSearch] = useState("");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [mounted, setMounted] = useState(false);
+  const [docked, setDocked] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const pillScrollerRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => setMounted(true), []);
+  const setPanelOpen = useCallback((open: boolean) => {
+    setDrawerOpen(open);
+    onOpenChange?.(open);
+  }, [onOpenChange]);
+
+  useEffect(() => {
+    setMounted(true);
+    const media = window.matchMedia("(min-width: 1536px)");
+    const updateDocked = () => setDocked(media.matches);
+    updateDocked();
+    media.addEventListener("change", updateDocked);
+    return () => media.removeEventListener("change", updateDocked);
+  }, []);
+
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
 
   useEffect(() => {
     const scroller = pillScrollerRef.current;
@@ -115,14 +131,14 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setDrawerOpen(false);
+        setPanelOpen(false);
         openerRef.current?.focus();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     requestAnimationFrame(() => closeButtonRef.current?.focus());
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen]);
+  }, [drawerOpen, setPanelOpen]);
 
   function openFocused(variable: NormalizedVariable, opener: HTMLButtonElement) {
     openerRef.current = opener;
@@ -130,7 +146,7 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
     setDrawerMode("focused");
     setSearch("");
     setExpandedKeys(new Set([variable.key]));
-    setDrawerOpen(true);
+    setPanelOpen(true);
   }
 
   function openAll(opener: HTMLButtonElement) {
@@ -138,11 +154,11 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
     setDrawerMode("all");
     setSearch("");
     setExpandedKeys(new Set(variables.map((variable) => variable.key)));
-    setDrawerOpen(true);
+    setPanelOpen(true);
   }
 
   function closeDrawer() {
-    setDrawerOpen(false);
+    setPanelOpen(false);
     openerRef.current?.focus();
   }
 
@@ -185,8 +201,9 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
         <p className="mt-2 px-1 text-xs leading-5 text-guard-muted">Select a variable to view its full value.</p>
       </div>
 
-      {mounted && drawerOpen ? createPortal(
+      {mounted && drawerOpen && (!docked || document.getElementById("variable-values-dock")) ? createPortal(
         <VariableValuesDrawer
+          variant={docked ? "docked" : "overlay"}
           variables={variables}
           selectedKey={selectedKey}
           mode={drawerMode}
@@ -202,13 +219,14 @@ export function VariableValuesReview({ testCaseId, variableValues, variableSchem
             return next;
           })}
         />,
-        document.body
+        docked ? document.getElementById("variable-values-dock")! : document.body
       ) : null}
     </section>
   );
 }
 
-function VariableValuesDrawer({ variables, selectedKey, mode, search, expandedKeys, hasGeneratedOutput, closeButtonRef, onSearch, onClose, onToggle }: {
+function VariableValuesDrawer({ variant, variables, selectedKey, mode, search, expandedKeys, hasGeneratedOutput, closeButtonRef, onSearch, onClose, onToggle }: {
+  variant: "docked" | "overlay";
   variables: NormalizedVariable[];
   selectedKey: string;
   mode: DrawerMode;
@@ -226,7 +244,7 @@ function VariableValuesDrawer({ variables, selectedKey, mode, search, expandedKe
   const orderedVariables = mode === "focused" ? [...filteredVariables].sort((a, b) => Number(b.key === selectedKey) - Number(a.key === selectedKey)) : filteredVariables;
 
   return (
-    <aside role="dialog" aria-modal="false" aria-labelledby={titleId} className="fixed inset-y-0 right-0 z-[70] flex w-full flex-col border-l border-guard-line bg-white shadow-floating sm:w-[82vw] lg:w-[420px]">
+    <aside role="dialog" aria-modal="false" aria-labelledby={titleId} className={cn("flex w-full flex-col overflow-hidden border border-guard-line bg-white", variant === "docked" ? "sticky top-4 max-h-[calc(100vh-2rem)] rounded-xl shadow-card" : "fixed inset-y-0 right-0 z-[70] max-h-none rounded-none border-y-0 border-r-0 shadow-floating sm:w-[82vw] lg:w-[420px]")}>
       <div className="border-b border-guard-line px-5 py-5">
         <div className="flex items-start justify-between gap-4">
           <div><h2 id={titleId} className="text-lg font-semibold text-guard-ink">Variable Values</h2><p className="mt-1 text-sm leading-5 text-guard-muted">All variables and values for this test case.</p></div>
