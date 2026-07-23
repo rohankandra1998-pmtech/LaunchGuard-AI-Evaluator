@@ -576,6 +576,25 @@ export async function deleteTestCase(formData: FormData) {
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
+export async function deleteErrorAnalysisReport(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const reportId = assertUuid(formString(formData, "report_id"), "Report ID");
+
+  const { data, error } = await supabase
+    .from("error_analysis_reports")
+    .delete()
+    .eq("id", reportId)
+    .eq("project_id", projectId)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error("Report could not be deleted. Please try again.");
+  if (!data) throw new Error("Report does not belong to this project or was already deleted.");
+
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/reports");
+}
+
 export async function saveHumanReview(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
