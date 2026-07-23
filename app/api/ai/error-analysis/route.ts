@@ -45,6 +45,36 @@ function isFailedRating(rating: ReviewRatingRow): rating is ReviewRatingRow & { 
   return rating.rating_score < 3 && (rating.rating_label === "Average" || rating.rating_label === "Bad");
 }
 
+const ERROR_ANALYSIS_INSTRUCTIONS = `
+Create a concise, decision-ready structured error analysis grounded only in the supplied reviewed failures.
+
+Executive summary:
+- Summarize the most important findings without generic statements such as "the prompt could be improved."
+- Set analyzed_test_case_count to the number of supplied reviewed failure cases.
+- Count high-severity patterns and identify the highest-priority pattern by pattern_id, or use null when none exists.
+
+Failure patterns:
+- Consolidate semantically similar failures; do not repeat one underlying issue under different wording.
+- Use short stable pattern_id values such as unsupported_action_claims or missing_policy_guidance.
+- Use only supplied test-case IDs and criteria. Count unique affected test cases, not failed ratings.
+- Sort by severity first, then frequency. Separate what happened from the likely root cause, and do not blame the prompt without evidence.
+- Use high for materially misleading, unsafe, policy-breaking, capability-misrepresenting, or repeatedly Bad failures; medium for meaningful correctness or usefulness failures; and low for limited, isolated weaknesses.
+
+Recommended prompt changes:
+- Reference at least one valid pattern_id, consolidate overlapping fixes, and sort by priority.
+- Provide a concrete, copy-ready exact_prompt_instruction rather than vague advice such as "be more accurate."
+- Preserve the product intent and all variable placeholders. Do not repeat the full failure description in the recommendation.
+
+Evidence:
+- Include only representative supplied cases and a focused AI-output excerpt rather than an unnecessarily long response.
+- Include the supplied failed criterion names, human-selected ratings, and human notes; use null when notes are absent.
+- Explain failure relative to the supplied criterion definitions. Never invent notes, ratings, criteria, inputs, outputs, or IDs.
+
+Grounding:
+- Only Average and Bad criteria are failures. Good is the target, Average is the partial-success boundary, and Bad is unacceptable.
+- Do not infer failures for omitted criteria. Human ratings are the source of truth, human notes are supporting evidence, and every claim must be supported by supplied cases.
+`.trim();
+
 export async function POST(request: Request) {
   try {
     const { workspace_slug, project_id } = await request.json();
@@ -121,7 +151,7 @@ export async function POST(request: Request) {
     const summary = await runStructuredOutput({
       schemaName: "error_analysis",
       schema: errorAnalysisSchema,
-      instructions: "Analyze the reviewed AI-output failures and return a concise structured error analysis for prompt improvement. Each test case contains only criteria rated Average or Bad. Use the Good definition as the target behavior, the Average definition as the partial-success boundary, and the Bad definition as the unacceptable behavior to avoid. Do not infer failures for criteria omitted from a test case. Ground patterns and prompt improvements in the provided failed criteria and human notes.",
+      instructions: ERROR_ANALYSIS_INSTRUCTIONS,
       input: JSON.stringify({ project: context.project, current_prompt: currentPrompt, reviewed_failures: reviewedFailureContexts }, null, 2)
     });
     const { data: report, error } = await supabase

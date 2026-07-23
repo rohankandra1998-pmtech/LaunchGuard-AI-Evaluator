@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       schemaName: "prompt_v_next",
       schema: promptVNextSchema,
       instructions:
-        "Create an improved system prompt from human error analysis. Preserve the product intent, add concrete rules, remove contradictions, and return structured JSON.",
+        "Create an improved system prompt from the human error analysis. For structured reports, use recommended_prompt_changes as the primary guidance, pay special attention to each exact_prompt_instruction, and validate changes against the related failure_patterns and evidence_examples. For legacy reports, use the available failure, root-cause, improvement, rule, and example sections as equivalent guidance. Do not blindly copy contradictory recommendations. Preserve the current prompt's product intent and every configured variable placeholder, retain unrelated correct instructions, remove contradictions, and return structured JSON.",
       input: JSON.stringify({ current_system_prompt: prompt.system_prompt, variable_schema: prompt.variable_schema, error_analysis_summary: report.summary, failed_examples: failedExamples, evaluation_criteria: criteria }, null, 2)
     });
 
