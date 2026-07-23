@@ -110,13 +110,14 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
 
   const latest = reports[0];
   const proposalStageActive = proposalPending || Boolean(draft);
+  const showPromptProposalAction = Boolean(latest) && !proposalStageActive;
   const sourceReport = draft
     ? reports.find((report) => report.id === draft.source_report.id) ?? latest
     : latest;
 
   return (
     <>
-      <div className="space-y-6">
+      <div className={`space-y-6 ${showPromptProposalAction ? "pb-48 sm:pb-32" : ""}`}>
         <ErrorAnalysisProgress hasReport={Boolean(latest)} proposalStageActive={proposalStageActive} />
 
         {!proposalStageActive ? (
@@ -142,23 +143,6 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
             <div className="mt-6">
               {latest ? <ReportBlock report={latest} /> : <EmptyState title="No reports yet">Run error analysis after completing human reviews.</EmptyState>}
             </div>
-            {latest ? (
-              <div className="mt-6 flex flex-col gap-4 border-t border-guard-line pt-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold text-guard-ink">Ready to improve the prompt?</p>
-                  <p className="mt-1 text-sm text-guard-muted">Turn these findings into a reviewable next-version proposal.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={createPrompt}
-                  disabled={proposalPending}
-                  className="focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300"
-                >
-                  <Sparkles aria-hidden="true" className="h-4 w-4" />
-                  Create Prompt Proposal
-                </button>
-              </div>
-            ) : null}
           </Card>
         ) : (
           <>
@@ -214,6 +198,30 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
         </Card>
       </div>
       </div>
+
+      {showPromptProposalAction ? (
+        <div
+          role="group"
+          aria-label="Prompt proposal action"
+          className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 rounded-xl border border-guard-line bg-white/95 p-4 shadow-floating backdrop-blur-sm lg:inset-x-8"
+        >
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-semibold text-guard-ink">Ready to improve the prompt?</p>
+              <p className="mt-1 text-sm text-guard-muted">Turn these findings into a reviewable next-version proposal.</p>
+            </div>
+            <button
+              type="button"
+              onClick={createPrompt}
+              disabled={analysisPending}
+              className="focus-ring inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 sm:w-auto"
+            >
+              <Sparkles aria-hidden="true" className="h-4 w-4" />
+              {analysisPending ? "Analysis running…" : "Create Prompt Proposal"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {deleteTarget ? (
         <DeleteReportDialog
