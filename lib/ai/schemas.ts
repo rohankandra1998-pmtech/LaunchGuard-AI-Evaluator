@@ -38,8 +38,7 @@ export const errorAnalysisSchema = z.object({
   problematic_examples: z.array(
     z.object({
       user_input: z.string(),
-      output_issue: z.string(),
-      severity: z.string().nullable()
+      output_issue: z.string()
     })
   )
 });
