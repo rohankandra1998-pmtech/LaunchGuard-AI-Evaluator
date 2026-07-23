@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCircle2, ChevronDown, EllipsisVertical, LoaderCircle, Sparkles, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, EllipsisVertical, LoaderCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { deleteErrorAnalysisReport } from "@/app/actions";
 import { PromptVNextDiffWorkspace, type PromptVNextApiResponse } from "@/components/prompt-vnext-diff-workspace";
 import { Badge, Card, EmptyState } from "@/components/ui";
@@ -18,6 +18,8 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   const [proposalPending, startProposalTransition] = useTransition();
   const [analysisExpanded, setAnalysisExpanded] = useState(false);
   const proposalInFlightRef = useRef(false);
+  const [runAnalysisDialogOpen, setRunAnalysisDialogOpen] = useState(false);
+  const runAnalysisOpenerRef = useRef<HTMLButtonElement | null>(null);
   const [openMenuReportId, setOpenMenuReportId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ErrorAnalysisReport | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -70,6 +72,24 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
     });
   }
 
+  function requestNewAnalysis(opener: HTMLButtonElement) {
+    if (analysisPending) return;
+    runAnalysisOpenerRef.current = opener;
+    setRunAnalysisDialogOpen(true);
+  }
+
+  function closeRunAnalysisDialog() {
+    if (analysisPending) return;
+    setRunAnalysisDialogOpen(false);
+    requestAnimationFrame(() => runAnalysisOpenerRef.current?.focus());
+  }
+
+  function confirmNewAnalysis() {
+    if (analysisPending) return;
+    setRunAnalysisDialogOpen(false);
+    summarize();
+  }
+
   function requestDelete(report: ErrorAnalysisReport, opener: HTMLButtonElement) {
     deleteOpenerRef.current = opener;
     setOpenMenuReportId(null);
@@ -110,7 +130,7 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
 
   const latest = reports[0];
   const proposalStageActive = proposalPending || Boolean(draft);
-  const showPromptProposalAction = Boolean(latest) && !proposalStageActive;
+  const showPromptProposalAction = Boolean(latest) && !analysisPending && !proposalStageActive;
   const sourceReport = draft
     ? reports.find((report) => report.id === draft.source_report.id) ?? latest
     : latest;
@@ -118,7 +138,11 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   return (
     <>
       <div className={`space-y-6 ${showPromptProposalAction ? "pb-48 sm:pb-32" : ""}`}>
-        <ErrorAnalysisProgress hasReport={Boolean(latest)} proposalStageActive={proposalStageActive} />
+        <ErrorAnalysisProgress
+          hasReport={Boolean(latest)}
+          analysisPending={analysisPending}
+          proposalStageActive={proposalStageActive}
+        />
 
         {!proposalStageActive ? (
           <Card>
@@ -129,13 +153,23 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
               </div>
               <button
                 type="button"
-                onClick={summarize}
+                onClick={(event) => {
+                  if (latest) requestNewAnalysis(event.currentTarget);
+                  else summarize();
+                }}
                 disabled={analysisPending}
                 className={latest
-                  ? "focus-ring shrink-0 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-50"
-                  : "focus-ring shrink-0 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300"}
+                  ? "focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:opacity-50"
+                  : "focus-ring shrink-0 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300"}
               >
-                {analysisPending ? "Running Error Analysis…" : "Run Error Analysis"}
+                {latest ? <RefreshCw aria-hidden="true" className={`h-4 w-4 ${analysisPending ? "animate-spin motion-reduce:animate-none" : ""}`} /> : null}
+                {analysisPending
+                  ? latest
+                    ? "Running New Analysis…"
+                    : "Running Error Analysis…"
+                  : latest
+                    ? "Run New Analysis"
+                    : "Run Error Analysis"}
               </button>
             </div>
             {analysisError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{analysisError}</p> : null}
@@ -213,14 +247,22 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
             <button
               type="button"
               onClick={createPrompt}
-              disabled={analysisPending}
-              className="focus-ring inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 sm:w-auto"
+              disabled={proposalPending}
+              className="focus-ring inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
             >
               <Sparkles aria-hidden="true" className="h-4 w-4" />
-              {analysisPending ? "Analysis running…" : "Create Prompt Proposal"}
+              Create Prompt Proposal
             </button>
           </div>
         </div>
+      ) : null}
+
+      {runAnalysisDialogOpen ? (
+        <RunAnalysisDialog
+          pending={analysisPending}
+          onCancel={closeRunAnalysisDialog}
+          onConfirm={confirmNewAnalysis}
+        />
       ) : null}
 
       {deleteTarget ? (
@@ -235,44 +277,74 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   );
 }
 
-type WorkflowStepState = "completed" | "current" | "upcoming";
+type WorkflowStepState = "completed" | "ready" | "inProgress" | "upcoming";
 
-function ErrorAnalysisProgress({ hasReport, proposalStageActive }: { hasReport: boolean; proposalStageActive: boolean }) {
+const workflowStatusText: Record<WorkflowStepState, string> = {
+  completed: "Completed",
+  ready: "Ready",
+  inProgress: "In progress",
+  upcoming: "Upcoming"
+};
+
+function ErrorAnalysisProgress({
+  hasReport,
+  analysisPending,
+  proposalStageActive
+}: {
+  hasReport: boolean;
+  analysisPending: boolean;
+  proposalStageActive: boolean;
+}) {
+  const analysisStepState: WorkflowStepState = analysisPending ? "inProgress" : hasReport ? "completed" : "ready";
+  const proposalStepState: WorkflowStepState = proposalStageActive
+    ? "inProgress"
+    : hasReport && !analysisPending
+      ? "ready"
+      : "upcoming";
   const steps: Array<{ label: string; state: WorkflowStepState }> = [
-    { label: "Run analysis", state: hasReport ? "completed" : "current" },
-    { label: "Review proposal", state: proposalStageActive ? "current" : "upcoming" },
+    { label: "Run analysis", state: analysisStepState },
+    { label: "Review proposal", state: proposalStepState },
     { label: "Save next version", state: "upcoming" }
   ];
 
   return (
     <nav aria-label="Error Analysis workflow" className="rounded-xl border border-guard-line bg-white px-4 py-4 shadow-card sm:px-6">
-      <ol className="grid gap-4 md:grid-cols-3 md:gap-0">
+      <ol className="flex flex-col md:flex-row">
         {steps.map((step, index) => (
           <li
             key={step.label}
-            aria-current={step.state === "current" ? "step" : undefined}
-            className="relative flex items-center gap-3 md:pr-5"
+            aria-current={step.state === "ready" || step.state === "inProgress" ? "step" : undefined}
+            className="relative flex min-w-0 items-start gap-3 pb-5 last:pb-0 md:block md:flex-1 md:pb-0"
           >
             <span
               aria-hidden="true"
               className={
                 step.state === "completed"
                   ? "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-guard-primary text-white"
-                  : step.state === "current"
+                  : step.state === "ready"
                     ? "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-guard-primary bg-guard-primarySoft font-semibold text-guard-primary"
+                    : step.state === "inProgress"
+                      ? "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-guard-primary font-semibold text-white"
                     : "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-guard-lineStrong bg-white font-semibold text-guard-muted"
               }
             >
               {step.state === "completed" ? <Check aria-hidden="true" className="h-5 w-5" /> : index + 1}
             </span>
-            <span className="min-w-0">
+            <span className="min-w-0 md:mt-3 md:block md:pr-6">
               <span className="block text-sm font-semibold text-guard-ink">{index + 1}. {step.label}</span>
-              <span className={step.state === "current" ? "block text-xs font-medium text-guard-primary" : "block text-xs text-guard-muted"}>
-                {step.state === "completed" ? "Completed" : step.state === "current" ? "Current" : "Upcoming"}
+              <span className={step.state === "ready" || step.state === "inProgress" ? "block text-xs font-medium text-guard-primary" : "block text-xs text-guard-muted"}>
+                {workflowStatusText[step.state]}
               </span>
             </span>
             {index < steps.length - 1 ? (
-              <span aria-hidden="true" className="absolute left-4 top-11 h-4 border-l border-guard-lineStrong md:left-[calc(100%-1rem)] md:top-1/2 md:h-0 md:w-8 md:-translate-y-1/2 md:border-l-0 md:border-t" />
+              <span
+                aria-hidden="true"
+                className={`absolute bottom-0 left-[1.0625rem] top-9 border-l-2 md:bottom-auto md:left-9 md:right-0 md:top-[1.0625rem] md:border-l-0 md:border-t-2 ${
+                  step.state === "completed" && (steps[index + 1].state === "ready" || steps[index + 1].state === "inProgress")
+                    ? "border-guard-primary"
+                    : "border-guard-lineStrong"
+                }`}
+              />
             ) : null}
           </li>
         ))}
@@ -435,6 +507,70 @@ function ReportActions({ open, onToggle, onClose, onDelete }: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function RunAnalysisDialog({ pending, onCancel, onConfirm }: {
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!pending) onCancel();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !pending) onCancel();
+      }}
+      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-guard-line bg-white p-0 text-guard-text shadow-floating backdrop:bg-slate-950/25"
+    >
+      <div className="p-6">
+        <h2 id={titleId} className="text-xl font-semibold tracking-tight text-guard-ink">Run a new error analysis?</h2>
+        <div id={descriptionId} className="mt-2 space-y-2 text-sm leading-6 text-guard-muted">
+          <p>LaunchGuard will analyze the latest human-reviewed test cases and create a new report. Your existing reports will remain available under Previous reports.</p>
+          <p>Prompt recommendations may change if human reviews or evaluation results have changed.</p>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            autoFocus
+            onClick={onCancel}
+            disabled={pending}
+            className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={pending}
+            className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <RefreshCw aria-hidden="true" className="h-4 w-4" />
+            Run New Analysis
+          </button>
+        </div>
+      </div>
+    </dialog>
   );
 }
 
