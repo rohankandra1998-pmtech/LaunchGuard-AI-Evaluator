@@ -145,24 +145,24 @@ export function PromptVNextDiffWorkspace({
   }
 
   return (
-    <section aria-labelledby="prompt-proposal-heading" className="space-y-4">
+    <section aria-labelledby="prompt-proposal-heading" className="space-y-4 pb-2">
       <div className="rounded-xl border border-guard-line bg-white p-5 shadow-card">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-          <div className="shrink-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-guard-primary">Prompt vNext proposal</p>
-            <h2 id="prompt-proposal-heading" className="mt-1 text-xl font-semibold text-guard-ink">
+        <h2 id="prompt-proposal-heading" className="text-lg font-semibold text-guard-ink">Prompt Proposal</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[12rem_10rem_10rem_minmax(15rem,0.85fr)_minmax(20rem,1.15fr)]">
+          <div className="rounded-lg border border-guard-primaryLine bg-guard-primarySoft px-4 py-3">
+            <p className="text-xs font-medium text-guard-muted">Version proposal</p>
+            <p className="mt-1 text-lg font-semibold text-guard-ink">
               v{data.source_prompt.version_number} <span aria-hidden="true" className="text-guard-muted">→</span>{" "}
-              v{data.proposed_version_number} proposed
-            </h2>
+              v{data.proposed_version_number}
+            </p>
+            <p className="mt-0.5 text-xs font-medium text-guard-primary">Proposed</p>
           </div>
-          <div className="grid flex-1 gap-3 sm:grid-cols-3">
-            <SummaryItem label="Meaningful changes" value={data.proposal.change_annotations.length} />
-            <SummaryItem label="Failed cases considered" value={data.failed_test_case_count} />
-            <SummaryItem label="Highest-priority pattern" value={highestPriorityPattern ?? "Not available"} compact />
-          </div>
-          <div className="xl:max-w-md xl:border-l xl:border-guard-line xl:pl-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-guard-muted">Change summary</p>
-            <p className="mt-1 text-sm leading-5 text-guard-text">{data.proposal.change_summary || "No summary was provided."}</p>
+          <SummaryItem label="Meaningful changes" value={data.proposal.change_annotations.length} />
+          <SummaryItem label="Failed cases considered" value={data.failed_test_case_count} />
+          <SummaryItem label="Highest-priority pattern" value={highestPriorityPattern ?? "Not available"} compact />
+          <div className="rounded-lg border border-guard-line bg-white px-4 py-3 sm:col-span-2 lg:col-span-4 xl:col-span-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-guard-muted">Why these changes?</p>
+            <p className="mt-1 text-sm leading-6 text-guard-text">{data.proposal.change_summary || "No summary was provided."}</p>
           </div>
         </div>
       </div>
@@ -188,8 +188,8 @@ export function PromptVNextDiffWorkspace({
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_20rem]">
-        <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:col-span-2">
+      <div className="grid min-w-0 gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_20rem]">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2 min-[1400px]:col-span-2">
           <div className={cn("min-w-0", mobilePane !== "before" && "hidden sm:block")}>
             <DiffPane
               id="before-prompt-panel"
@@ -234,8 +234,8 @@ export function PromptVNextDiffWorkspace({
           </div>
         </div>
 
-        <aside aria-labelledby="why-change-heading" className="rounded-xl border border-guard-line bg-white p-5 shadow-card xl:sticky xl:top-4 xl:self-start">
-          <h3 id="why-change-heading" className="text-lg font-semibold text-guard-ink">Why this change?</h3>
+        <aside aria-labelledby="proposed-changes-heading" className="rounded-xl border border-guard-line bg-white p-5 shadow-card min-[1400px]:h-[35.5rem] min-[1400px]:overflow-y-auto">
+          <h3 id="proposed-changes-heading" className="sticky top-0 z-[1] -mx-1 border-b border-guard-line bg-white px-1 pb-3 text-lg font-semibold text-guard-ink">Proposed changes</h3>
           {annotationsStale ? (
             <p className="mt-3 rounded-lg border border-amber-200 bg-guard-amberSoft p-3 text-xs leading-5 text-guard-amber">
               Change explanations were generated for the original proposal and may not exactly match your edits.
@@ -250,8 +250,6 @@ export function PromptVNextDiffWorkspace({
             />
           ) : (
             <ChangeOverview
-              summary={data.proposal.change_summary}
-              failedCount={data.failed_test_case_count}
               annotations={data.proposal.change_annotations}
               onSelect={(changeId) => selectChange(changeId, true)}
             />
@@ -259,7 +257,7 @@ export function PromptVNextDiffWorkspace({
         </aside>
       </div>
 
-      <div className="rounded-xl border border-guard-line bg-white p-4 shadow-card">
+      <div className="sticky bottom-4 z-30 rounded-xl border border-guard-line bg-white/95 p-4 shadow-floating backdrop-blur-sm">
         {saveError ? <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red">{saveError}</p> : null}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end" role="group" aria-label="Prompt proposal actions">
           <button type="button" onClick={discard} disabled={saving} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-red hover:bg-guard-redSoft disabled:opacity-50">
@@ -390,26 +388,16 @@ const DiffRow = forwardRef<HTMLDivElement | HTMLButtonElement, {
 });
 
 function ChangeOverview({
-  summary,
-  failedCount,
   annotations,
   onSelect
 }: {
-  summary: string;
-  failedCount: number;
   annotations: PromptVNextResponse["change_annotations"];
   onSelect: (changeId: string) => void;
 }) {
   return (
     <div className="mt-4">
-      <p className="text-sm leading-6 text-guard-text">{summary || "Review the proposed prompt changes."}</p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Badge tone="primary">{annotations.length} change{annotations.length === 1 ? "" : "s"}</Badge>
-        <Badge>{failedCount} failed case{failedCount === 1 ? "" : "s"} considered</Badge>
-      </div>
-      <h4 className="mt-5 text-xs font-semibold uppercase tracking-wide text-guard-muted">Available changes</h4>
       {annotations.length ? (
-        <div className="mt-2 space-y-2">
+        <div className="space-y-2">
           {annotations.map((annotation) => (
             <button
               key={annotation.change_id}

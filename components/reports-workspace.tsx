@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { EllipsisVertical, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, EllipsisVertical, LoaderCircle, Sparkles, Trash2 } from "lucide-react";
 import { deleteErrorAnalysisReport } from "@/app/actions";
 import { PromptVNextDiffWorkspace, type PromptVNextApiResponse } from "@/components/prompt-vnext-diff-workspace";
 import { Badge, Card, EmptyState } from "@/components/ui";
@@ -16,6 +16,7 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   const [draft, setDraft] = useState<PromptVNextApiResponse | null>(null);
   const [analysisPending, startAnalysisTransition] = useTransition();
   const [proposalPending, startProposalTransition] = useTransition();
+  const [analysisExpanded, setAnalysisExpanded] = useState(false);
   const proposalInFlightRef = useRef(false);
   const [openMenuReportId, setOpenMenuReportId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ErrorAnalysisReport | null>(null);
@@ -56,10 +57,13 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
           body: JSON.stringify({ workspace_slug: workspaceSlug, project_id: projectId })
         });
         const json = await res.json();
-        if (!res.ok) setProposalError(json.error || "Could not generate the Prompt vNext proposal.");
-        else setDraft(json as PromptVNextApiResponse);
+        if (!res.ok) setProposalError(json.error || "Could not generate the Prompt Proposal.");
+        else {
+          setAnalysisExpanded(false);
+          setDraft(json as PromptVNextApiResponse);
+        }
       } catch {
-        setProposalError("Could not generate the Prompt vNext proposal. Check your connection and try again.");
+        setProposalError("Could not generate the Prompt Proposal. Check your connection and try again.");
       } finally {
         proposalInFlightRef.current = false;
       }
@@ -105,56 +109,87 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   }
 
   const latest = reports[0];
+  const proposalStageActive = proposalPending || Boolean(draft);
+  const sourceReport = draft
+    ? reports.find((report) => report.id === draft.source_report.id) ?? latest
+    : latest;
 
   return (
     <>
       <div className="space-y-6">
-        <div className={draft ? "space-y-6" : "grid gap-6 lg:grid-cols-[0.95fr_1.05fr]"}>
+        <ErrorAnalysisProgress hasReport={Boolean(latest)} proposalStageActive={proposalStageActive} />
+
+        {!proposalStageActive ? (
           <Card>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-guard-ink">Error Analysis</h2>
                 <p className="mt-2 text-sm text-guard-muted">GPT-5 summarizes reviewed failed or average test cases only.</p>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={summarize} disabled={analysisPending} className="focus-ring rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300">
-                  {analysisPending ? "Summarizing Error Analysis..." : "Summarize Error Analysis"}
-                </button>
-                <button type="button" onClick={createPrompt} disabled={proposalPending || !latest} className="focus-ring rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:cursor-not-allowed disabled:text-slate-400">
-                  {proposalPending ? "Generating Prompt vNext proposal..." : "Create Prompt vNext"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={summarize}
+                disabled={analysisPending}
+                className={latest
+                  ? "focus-ring shrink-0 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-primarySoft disabled:opacity-50"
+                  : "focus-ring shrink-0 rounded-lg bg-guard-primary px-4 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300"}
+              >
+                {analysisPending ? "Running Error Analysis…" : "Run Error Analysis"}
+              </button>
             </div>
             {analysisError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{analysisError}</p> : null}
             {proposalError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
             <div className="mt-6">
               {latest ? <ReportBlock report={latest} /> : <EmptyState title="No reports yet">Run error analysis after completing human reviews.</EmptyState>}
             </div>
-          </Card>
-
-          {draft ? (
-            <PromptVNextDiffWorkspace
-              data={draft}
-              workspaceSlug={workspaceSlug}
-              projectId={projectId}
-              onDiscard={() => setDraft(null)}
-            />
-          ) : (
-            <Card>
-              <h2 className="text-lg font-semibold text-guard-ink">Prompt vNext draft</h2>
-              <div className="mt-4">
-                {proposalPending ? (
-                  <div aria-live="polite" className="rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted p-8 text-center">
-                    <p className="text-base font-semibold text-guard-ink">Generating Prompt vNext proposal…</p>
-                    <p className="mt-2 text-sm text-guard-muted">Grounding changes in the latest reviewed failures and current prompt.</p>
-                  </div>
-                ) : (
-                  <EmptyState title="No prompt draft">Create Prompt vNext after an error analysis report is available.</EmptyState>
-                )}
+            {latest ? (
+              <div className="mt-6 flex flex-col gap-4 border-t border-guard-line pt-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-guard-ink">Ready to improve the prompt?</p>
+                  <p className="mt-1 text-sm text-guard-muted">Turn these findings into a reviewable next-version proposal.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={createPrompt}
+                  disabled={proposalPending}
+                  className="focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:bg-slate-300"
+                >
+                  <Sparkles aria-hidden="true" className="h-4 w-4" />
+                  Create Prompt Proposal
+                </button>
               </div>
-            </Card>
-          )}
-        </div>
+            ) : null}
+          </Card>
+        ) : (
+          <>
+            <AnalysisSummaryCard
+              report={sourceReport}
+              fallbackSummary={draft?.source_report.summary}
+              expanded={analysisExpanded}
+              onToggle={() => setAnalysisExpanded((current) => !current)}
+            />
+            {analysisExpanded && sourceReport ? (
+              <div id="full-source-analysis">
+                <Card>
+                  <ReportBlock report={sourceReport} />
+                </Card>
+              </div>
+            ) : null}
+            {proposalError ? <p role="alert" className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
+            {proposalPending ? <ProposalGenerationState /> : null}
+            {draft ? (
+              <PromptVNextDiffWorkspace
+                data={draft}
+                workspaceSlug={workspaceSlug}
+                projectId={projectId}
+                onDiscard={() => {
+                  setAnalysisExpanded(false);
+                  setDraft(null);
+                }}
+              />
+            ) : null}
+          </>
+        )}
 
       <div>
         <Card>
@@ -189,6 +224,129 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
         />
       ) : null}
     </>
+  );
+}
+
+type WorkflowStepState = "completed" | "current" | "upcoming";
+
+function ErrorAnalysisProgress({ hasReport, proposalStageActive }: { hasReport: boolean; proposalStageActive: boolean }) {
+  const steps: Array<{ label: string; state: WorkflowStepState }> = [
+    { label: "Run analysis", state: hasReport ? "completed" : "current" },
+    { label: "Review proposal", state: proposalStageActive ? "current" : "upcoming" },
+    { label: "Save next version", state: "upcoming" }
+  ];
+
+  return (
+    <nav aria-label="Error Analysis workflow" className="rounded-xl border border-guard-line bg-white px-4 py-4 shadow-card sm:px-6">
+      <ol className="grid gap-4 md:grid-cols-3 md:gap-0">
+        {steps.map((step, index) => (
+          <li
+            key={step.label}
+            aria-current={step.state === "current" ? "step" : undefined}
+            className="relative flex items-center gap-3 md:pr-5"
+          >
+            <span
+              aria-hidden="true"
+              className={
+                step.state === "completed"
+                  ? "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-guard-primary text-white"
+                  : step.state === "current"
+                    ? "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-guard-primary bg-guard-primarySoft font-semibold text-guard-primary"
+                    : "relative z-[1] flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-guard-lineStrong bg-white font-semibold text-guard-muted"
+              }
+            >
+              {step.state === "completed" ? <Check aria-hidden="true" className="h-5 w-5" /> : index + 1}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-guard-ink">{index + 1}. {step.label}</span>
+              <span className={step.state === "current" ? "block text-xs font-medium text-guard-primary" : "block text-xs text-guard-muted"}>
+                {step.state === "completed" ? "Completed" : step.state === "current" ? "Current" : "Upcoming"}
+              </span>
+            </span>
+            {index < steps.length - 1 ? (
+              <span aria-hidden="true" className="absolute left-4 top-11 h-4 border-l border-guard-lineStrong md:left-[calc(100%-1rem)] md:top-1/2 md:h-0 md:w-8 md:-translate-y-1/2 md:border-l-0 md:border-t" />
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function AnalysisSummaryCard({
+  report,
+  fallbackSummary,
+  expanded,
+  onToggle
+}: {
+  report?: ErrorAnalysisReport;
+  fallbackSummary?: unknown;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const summary = report?.summary ?? fallbackSummary;
+  const parsed = errorAnalysisSchema.safeParse(summary);
+  const overview = parsed.success
+    ? parsed.data.executive_summary.overview
+    : isLegacySummary(summary)
+      ? summary.top_failure_patterns[0] || summary.most_severe_mistakes[0] || "Legacy Error Analysis report."
+      : "The source Error Analysis remains available for review.";
+  const highestPriorityPattern = parsed.success
+    ? parsed.data.failure_patterns.find((pattern) => pattern.pattern_id === parsed.data.executive_summary.highest_priority_pattern_id)?.title
+      ?? (parsed.data.executive_summary.highest_priority_pattern_id ? formatIdentifier(parsed.data.executive_summary.highest_priority_pattern_id) : "None")
+    : "Not available";
+
+  return (
+    <Card className="p-4 sm:p-5">
+      <div className="grid gap-5 xl:grid-cols-[13rem_minmax(0,1fr)_minmax(30rem,0.9fr)] xl:items-center">
+        <div className="flex items-start gap-3 xl:border-r xl:border-guard-line xl:pr-5">
+          <span className="rounded-lg bg-guard-primarySoft p-2 text-guard-primary">
+            <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="font-semibold text-guard-ink">Analysis complete</h2>
+            <p className="mt-1 text-xs text-guard-muted">{report ? new Date(report.created_at).toLocaleString() : "Source report"}</p>
+          </div>
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-guard-muted">Executive summary</p>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-guard-text">{overview}</p>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls="full-source-analysis"
+            onClick={onToggle}
+            disabled={!report}
+            className="focus-ring mt-2 inline-flex items-center gap-1 rounded-md text-sm font-semibold text-guard-primary hover:text-guard-primaryHover disabled:cursor-not-allowed disabled:text-guard-muted"
+          >
+            {expanded ? "Hide full analysis" : "View full analysis"}
+            <ChevronDown aria-hidden="true" className={expanded ? "h-4 w-4 rotate-180" : "h-4 w-4"} />
+          </button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <SummaryMetric label="Failure cases analyzed" value={parsed.success ? String(parsed.data.executive_summary.analyzed_test_case_count) : "—"} />
+          <SummaryMetric label="High-severity patterns" value={parsed.success ? String(parsed.data.executive_summary.high_severity_pattern_count) : "—"} tone={parsed.success && parsed.data.executive_summary.high_severity_pattern_count ? "danger" : "neutral"} />
+          <SummaryMetric label="Highest-priority pattern" value={highestPriorityPattern} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function ProposalGenerationState() {
+  return (
+    <Card className="border-guard-primaryLine bg-guard-surfaceMuted">
+      <div aria-live="polite" className="flex flex-col items-center py-8 text-center">
+        <span className="rounded-full bg-white p-3 text-guard-primary shadow-card">
+          <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none" />
+        </span>
+        <h2 className="mt-4 text-lg font-semibold text-guard-ink">Generating Prompt Proposal…</h2>
+        <p className="mt-2 text-sm text-guard-muted">Grounding changes in the latest reviewed failures and current prompt.</p>
+        <div aria-hidden="true" className="mt-6 h-2 w-full max-w-lg overflow-hidden rounded-full bg-white">
+          <div className="starter-progress-indicator h-full w-1/3 rounded-full bg-guard-primary" />
+        </div>
+      </div>
+    </Card>
   );
 }
 
