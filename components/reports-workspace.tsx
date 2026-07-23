@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCircle2, ChevronDown, EllipsisVertical, LoaderCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, EllipsisVertical, LoaderCircle, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { deleteErrorAnalysisReport } from "@/app/actions";
 import { PromptVNextDiffWorkspace, type PromptVNextApiResponse } from "@/components/prompt-vnext-diff-workspace";
 import { Badge, Card, EmptyState } from "@/components/ui";
@@ -16,7 +16,8 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
   const [draft, setDraft] = useState<PromptVNextApiResponse | null>(null);
   const [analysisPending, startAnalysisTransition] = useTransition();
   const [proposalPending, startProposalTransition] = useTransition();
-  const [analysisExpanded, setAnalysisExpanded] = useState(false);
+  const [fullAnalysisDialogOpen, setFullAnalysisDialogOpen] = useState(false);
+  const fullAnalysisOpenerRef = useRef<HTMLButtonElement | null>(null);
   const proposalInFlightRef = useRef(false);
   const [runAnalysisDialogOpen, setRunAnalysisDialogOpen] = useState(false);
   const runAnalysisOpenerRef = useRef<HTMLButtonElement | null>(null);
@@ -61,7 +62,7 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
         const json = await res.json();
         if (!res.ok) setProposalError(json.error || "Could not generate the Prompt Proposal.");
         else {
-          setAnalysisExpanded(false);
+          setFullAnalysisDialogOpen(false);
           setDraft(json as PromptVNextApiResponse);
         }
       } catch {
@@ -76,6 +77,16 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
     if (analysisPending) return;
     runAnalysisOpenerRef.current = opener;
     setRunAnalysisDialogOpen(true);
+  }
+
+  function openFullAnalysisDialog(opener: HTMLButtonElement) {
+    fullAnalysisOpenerRef.current = opener;
+    setFullAnalysisDialogOpen(true);
+  }
+
+  function closeFullAnalysisDialog() {
+    setFullAnalysisDialogOpen(false);
+    requestAnimationFrame(() => fullAnalysisOpenerRef.current?.focus());
   }
 
   function closeRunAnalysisDialog() {
@@ -135,6 +146,10 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
     ? reports.find((report) => report.id === draft.source_report.id) ?? latest
     : latest;
 
+  useEffect(() => {
+    if (fullAnalysisDialogOpen && !sourceReport) setFullAnalysisDialogOpen(false);
+  }, [fullAnalysisDialogOpen, sourceReport]);
+
   return (
     <>
       <div className={`space-y-6 ${showPromptProposalAction ? "pb-48 sm:pb-32" : ""}`}>
@@ -183,16 +198,9 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
             <AnalysisSummaryCard
               report={sourceReport}
               fallbackSummary={draft?.source_report.summary}
-              expanded={analysisExpanded}
-              onToggle={() => setAnalysisExpanded((current) => !current)}
+              dialogId="full-error-analysis-dialog"
+              onOpen={openFullAnalysisDialog}
             />
-            {analysisExpanded && sourceReport ? (
-              <div id="full-source-analysis">
-                <Card>
-                  <ReportBlock report={sourceReport} />
-                </Card>
-              </div>
-            ) : null}
             {proposalError ? <p role="alert" className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
             {proposalPending ? <ProposalGenerationState /> : null}
             {draft ? (
@@ -201,7 +209,7 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
                 workspaceSlug={workspaceSlug}
                 projectId={projectId}
                 onDiscard={() => {
-                  setAnalysisExpanded(false);
+                  setFullAnalysisDialogOpen(false);
                   setDraft(null);
                 }}
               />
@@ -262,6 +270,14 @@ export function ReportsWorkspace({ workspaceSlug, projectId, reports }: { worksp
           pending={analysisPending}
           onCancel={closeRunAnalysisDialog}
           onConfirm={confirmNewAnalysis}
+        />
+      ) : null}
+
+      {fullAnalysisDialogOpen && sourceReport ? (
+        <FullAnalysisDialog
+          id="full-error-analysis-dialog"
+          report={sourceReport}
+          onClose={closeFullAnalysisDialog}
         />
       ) : null}
 
@@ -356,13 +372,13 @@ function ErrorAnalysisProgress({
 function AnalysisSummaryCard({
   report,
   fallbackSummary,
-  expanded,
-  onToggle
+  dialogId,
+  onOpen
 }: {
   report?: ErrorAnalysisReport;
   fallbackSummary?: unknown;
-  expanded: boolean;
-  onToggle: () => void;
+  dialogId: string;
+  onOpen: (opener: HTMLButtonElement) => void;
 }) {
   const summary = report?.summary ?? fallbackSummary;
   const parsed = errorAnalysisSchema.safeParse(summary);
@@ -393,14 +409,13 @@ function AnalysisSummaryCard({
           <p className="mt-1 line-clamp-2 text-sm leading-6 text-guard-text">{overview}</p>
           <button
             type="button"
-            aria-expanded={expanded}
-            aria-controls="full-source-analysis"
-            onClick={onToggle}
+            aria-haspopup="dialog"
+            aria-controls={dialogId}
+            onClick={(event) => onOpen(event.currentTarget)}
             disabled={!report}
-            className="focus-ring mt-2 inline-flex items-center gap-1 rounded-md text-sm font-semibold text-guard-primary hover:text-guard-primaryHover disabled:cursor-not-allowed disabled:text-guard-muted"
+            className="focus-ring mt-2 rounded-md text-sm font-semibold text-guard-primary hover:text-guard-primaryHover disabled:cursor-not-allowed disabled:text-guard-muted"
           >
-            {expanded ? "Hide full analysis" : "View full analysis"}
-            <ChevronDown aria-hidden="true" className={expanded ? "h-4 w-4 rotate-180" : "h-4 w-4"} />
+            View full analysis
           </button>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -507,6 +522,63 @@ function ReportActions({ open, onToggle, onClose, onDelete }: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FullAnalysisDialog({ id, report, onClose }: {
+  id: string;
+  report: ErrorAnalysisReport;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const timestampId = useId();
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      id={id}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={timestampId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-6xl overflow-hidden rounded-2xl border border-guard-line bg-white p-0 text-guard-text shadow-floating backdrop:bg-slate-950/30"
+    >
+      <div className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col overflow-hidden">
+        <header className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-4 border-b border-guard-line bg-white px-4 py-4 sm:px-6">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-xl font-semibold tracking-tight text-guard-ink">Full Error Analysis</h2>
+            <p id={timestampId} className="mt-1 text-sm text-guard-muted">{new Date(report.created_at).toLocaleString()}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close full error analysis"
+            onClick={onClose}
+            className="focus-ring shrink-0 rounded-lg p-2 text-guard-muted hover:bg-guard-primarySoft hover:text-guard-primary"
+          >
+            <X aria-hidden="true" className="h-5 w-5" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-guard-bg p-4 sm:p-6">
+          <ReportBlock report={report} />
+        </div>
+      </div>
+    </dialog>
   );
 }
 

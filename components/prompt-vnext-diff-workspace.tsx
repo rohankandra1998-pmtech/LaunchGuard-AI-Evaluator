@@ -48,6 +48,7 @@ export function PromptVNextDiffWorkspace({
   const [saving, startSaving] = useTransition();
   const saveInFlight = useRef(false);
   const syncingScroll = useRef(false);
+  const comparisonRef = useRef<HTMLElement>(null);
   const beforeScrollRef = useRef<HTMLDivElement>(null);
   const afterScrollRef = useRef<HTMLDivElement>(null);
   const beforeRowRefs = useRef<Array<HTMLDivElement | HTMLButtonElement | null>>([]);
@@ -89,10 +90,12 @@ export function PromptVNextDiffWorkspace({
     setSelectedChangeId(changeId);
     if (!scrollToMatch) return;
     const rowIndex = diff.findIndex((line) => line.annotationIds.includes(changeId));
-    if (rowIndex < 0) return;
     requestAnimationFrame(() => {
-      scrollRowIntoPane(beforeScrollRef.current, beforeRowRefs.current[rowIndex]);
-      scrollRowIntoPane(afterScrollRef.current, afterRowRefs.current[rowIndex]);
+      const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      comparisonRef.current?.scrollIntoView({ behavior, block: "start" });
+      if (rowIndex < 0) return;
+      scrollRowIntoPane(beforeScrollRef.current, beforeRowRefs.current[rowIndex], behavior);
+      scrollRowIntoPane(afterScrollRef.current, afterRowRefs.current[rowIndex], behavior);
     });
   }
 
@@ -167,29 +170,29 @@ export function PromptVNextDiffWorkspace({
         </div>
       </div>
 
-      <div className="sm:hidden">
-        <div className="grid grid-cols-2 rounded-lg border border-guard-lineStrong bg-white p-1" role="tablist" aria-label="Prompt comparison panels">
-          {(["before", "after"] as const).map((pane) => (
-            <button
-              key={pane}
-              type="button"
-              role="tab"
-              aria-selected={mobilePane === pane}
-              aria-controls={`${pane}-prompt-panel`}
-              onClick={() => setMobilePane(pane)}
-              className={cn(
-                "focus-ring rounded-md px-3 py-2 text-sm font-semibold",
-                mobilePane === pane ? "bg-guard-primarySoft text-guard-primaryHover" : "text-guard-muted"
-              )}
-            >
-              {pane === "before" ? "Before" : "After"}
-            </button>
-          ))}
+      <section ref={comparisonRef} aria-label="Prompt comparison" className="min-w-0 space-y-4">
+        <div className="sm:hidden">
+          <div className="grid grid-cols-2 rounded-lg border border-guard-lineStrong bg-white p-1" role="tablist" aria-label="Prompt comparison panels">
+            {(["before", "after"] as const).map((pane) => (
+              <button
+                key={pane}
+                type="button"
+                role="tab"
+                aria-selected={mobilePane === pane}
+                aria-controls={`${pane}-prompt-panel`}
+                onClick={() => setMobilePane(pane)}
+                className={cn(
+                  "focus-ring rounded-md px-3 py-2 text-sm font-semibold",
+                  mobilePane === pane ? "bg-guard-primarySoft text-guard-primaryHover" : "text-guard-muted"
+                )}
+              >
+                {pane === "before" ? "Before" : "After"}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="grid min-w-0 gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_20rem]">
-        <div className="grid min-w-0 gap-4 md:grid-cols-2 min-[1400px]:col-span-2">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2">
           <div className={cn("min-w-0", mobilePane !== "before" && "hidden sm:block")}>
             <DiffPane
               id="before-prompt-panel"
@@ -233,29 +236,29 @@ export function PromptVNextDiffWorkspace({
             )}
           </div>
         </div>
+      </section>
 
-        <aside aria-labelledby="proposed-changes-heading" className="rounded-xl border border-guard-line bg-white p-5 shadow-card min-[1400px]:h-[35.5rem] min-[1400px]:overflow-y-auto">
-          <h3 id="proposed-changes-heading" className="sticky top-0 z-[1] -mx-1 border-b border-guard-line bg-white px-1 pb-3 text-lg font-semibold text-guard-ink">Proposed changes</h3>
-          {annotationsStale ? (
-            <p className="mt-3 rounded-lg border border-amber-200 bg-guard-amberSoft p-3 text-xs leading-5 text-guard-amber">
-              Change explanations were generated for the original proposal and may not exactly match your edits.
-            </p>
-          ) : null}
-          {selectedAnnotation ? (
-            <SelectedChange
-              annotation={selectedAnnotation}
-              patternTitles={patternTitles}
-              hasMatch={selectedHasMatch}
-              onBack={() => setSelectedChangeId(null)}
-            />
-          ) : (
-            <ChangeOverview
-              annotations={data.proposal.change_annotations}
-              onSelect={(changeId) => selectChange(changeId, true)}
-            />
-          )}
-        </aside>
-      </div>
+      <section aria-labelledby="proposed-changes-heading" className="w-full rounded-xl border border-guard-line bg-white p-5 shadow-card">
+        <h3 id="proposed-changes-heading" className="border-b border-guard-line pb-3 text-lg font-semibold text-guard-ink">Proposed changes</h3>
+        {annotationsStale ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-guard-amberSoft p-3 text-xs leading-5 text-guard-amber">
+            Change explanations were generated for the original proposal and may not exactly match your edits.
+          </p>
+        ) : null}
+        {selectedAnnotation ? (
+          <SelectedChange
+            annotation={selectedAnnotation}
+            patternTitles={patternTitles}
+            hasMatch={selectedHasMatch}
+            onBack={() => setSelectedChangeId(null)}
+          />
+        ) : (
+          <ChangeOverview
+            annotations={data.proposal.change_annotations}
+            onSelect={(changeId) => selectChange(changeId, true)}
+          />
+        )}
+      </section>
 
       <div className="sticky bottom-4 z-30 rounded-xl border border-guard-line bg-white/95 p-4 shadow-floating backdrop-blur-sm">
         {saveError ? <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red">{saveError}</p> : null}
@@ -397,13 +400,13 @@ function ChangeOverview({
   return (
     <div className="mt-4">
       {annotations.length ? (
-        <div className="space-y-2">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {annotations.map((annotation) => (
             <button
               key={annotation.change_id}
               type="button"
               onClick={() => onSelect(annotation.change_id)}
-              className="focus-ring flex w-full items-start justify-between gap-3 rounded-lg border border-guard-line bg-guard-surfaceMuted p-3 text-left hover:border-guard-primaryLine hover:bg-guard-primarySoft"
+              className="focus-ring flex h-full w-full items-start justify-between gap-3 rounded-lg border border-guard-line bg-guard-surfaceMuted p-4 text-left hover:border-guard-primaryLine hover:bg-guard-primarySoft"
             >
               <span className="text-sm font-medium leading-5 text-guard-ink">{annotation.title}</span>
               <ChangeTypeBadge type={annotation.change_type} />
@@ -483,9 +486,13 @@ function ChangeTypeBadge({ type }: { type: "add" | "change" | "remove" }) {
   return <Badge tone={type === "add" ? "good" : type === "remove" ? "bad" : "average"}>{type === "add" ? "Added" : type === "remove" ? "Removed" : "Changed"}</Badge>;
 }
 
-function scrollRowIntoPane(pane: HTMLDivElement | null, row: HTMLDivElement | HTMLButtonElement | null) {
+function scrollRowIntoPane(
+  pane: HTMLDivElement | null,
+  row: HTMLDivElement | HTMLButtonElement | null,
+  behavior: ScrollBehavior
+) {
   if (!pane || !row) return;
-  pane.scrollTo({ top: Math.max(0, row.offsetTop - pane.clientHeight / 2), behavior: "smooth" });
+  pane.scrollTo({ top: Math.max(0, row.offsetTop - pane.clientHeight / 2), behavior });
 }
 
 function compactId(value: string) {
