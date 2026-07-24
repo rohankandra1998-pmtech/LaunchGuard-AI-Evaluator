@@ -503,7 +503,7 @@ export async function saveTestCase(formData: FormData) {
   const result = testCaseId
     ? await supabase
         .from("test_cases")
-        .update({ ...payload, generated_ai_output: null, prompt_version_id: null, model_used: null })
+        .update({ ...payload, generated_ai_output: null, prompt_version_id: null, model_used: null, variable_usage: {} })
         .eq("id", testCaseId)
         .eq("project_id", projectId)
         .select("id")

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { PromptVariable } from "@/lib/types";
+import type { PromptVariable, VariableUsage, VariableUsageEntry } from "@/lib/types";
 
 export const PROMPT_VARIABLE_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
 
@@ -217,13 +217,38 @@ function typedValue(variable: PromptVariable, rawValue: unknown) {
   return value;
 }
 
+function variableUsageEntry(variable: PromptVariable, resolvedValue: string | number | boolean): VariableUsageEntry {
+  const defaultValue = variable.default_value;
+  const hasUsableDefault = defaultValue !== null && defaultValue !== "";
+
+  if (!hasUsableDefault && resolvedValue === "") {
+    return { source: "empty", value: null };
+  }
+  if (hasUsableDefault && Object.is(resolvedValue, defaultValue)) {
+    return { source: "default", value: resolvedValue };
+  }
+  return { source: "override", value: resolvedValue };
+}
+
 export function valueToPromptString(value: string | number | boolean) {
   return typeof value === "boolean" ? (value ? "true" : "false") : String(value);
 }
 
+function resolveValidatedPromptVariableValues(variables: PromptVariable[], values: Record<string, unknown>) {
+  const resolvedValues: Record<string, string | number | boolean> = {};
+  const variableUsage: VariableUsage = {};
+
+  for (const variable of variables) {
+    const resolvedValue = typedValue(variable, values[variable.key]);
+    resolvedValues[variable.key] = resolvedValue;
+    variableUsage[variable.key] = variableUsageEntry(variable, resolvedValue);
+  }
+
+  return { resolvedValues, variableUsage };
+}
+
 export function resolvePromptVariableValues(variablesInput: unknown, values: Record<string, unknown>) {
-  const variables = validateVariableSchema(variablesInput);
-  return Object.fromEntries(variables.map((variable) => [variable.key, typedValue(variable, values[variable.key])]));
+  return resolveValidatedPromptVariableValues(validateVariableSchema(variablesInput), values);
 }
 
 function compileSegments(
@@ -256,10 +281,10 @@ export function assertPromptPlaceholdersConfigured(prompt: string, variablesInpu
 
 export function compilePrompt(prompt: string, variablesInput: unknown, values: Record<string, unknown>) {
   const variables = assertPromptPlaceholdersConfigured(prompt, variablesInput);
-  const resolvedValues = resolvePromptVariableValues(variables, values);
+  const { resolvedValues, variableUsage } = resolveValidatedPromptVariableValues(variables, values);
   const segments = compileSegments(prompt, variables, resolvedValues);
   const compiledPrompt = segments.map((segment) => segment.text).join("");
-  return { compiledPrompt, resolvedValues };
+  return { compiledPrompt, resolvedValues, variableUsage };
 }
 
 export function compilePromptPreview(prompt: string, variablesInput: unknown, values: Record<string, unknown>) {

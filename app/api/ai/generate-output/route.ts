@@ -35,14 +35,18 @@ export async function POST(request: Request) {
     }
 
     const variableSchema = validateVariableSchema(prompt.variable_schema);
-    const compiledCases = testCases!.map((testCase) => ({
-      testCase,
-      systemPrompt: compilePrompt(
+    const compiledCases = testCases!.map((testCase) => {
+      const compilation = compilePrompt(
         prompt.system_prompt,
         variableSchema,
         testCase.variable_values && typeof testCase.variable_values === "object" && !Array.isArray(testCase.variable_values) ? testCase.variable_values : {}
-      ).compiledPrompt
-    }));
+      );
+      return {
+        testCase,
+        systemPrompt: compilation.compiledPrompt,
+        variableUsage: compilation.variableUsage
+      };
+    });
 
     const { data: run, error: runError } = await supabase
       .from("eval_runs")
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
     if (runError) throw runError;
 
     const results = [];
-    for (const { testCase, systemPrompt } of compiledCases) {
+    for (const { testCase, systemPrompt, variableUsage } of compiledCases) {
       const output = await generateProductOutput({ systemPrompt, userInput: testCase.user_input, model: selectedModel });
       const { error: outputError } = await supabase.from("generated_outputs").insert({
         project_id,
@@ -65,13 +69,14 @@ export async function POST(request: Request) {
         test_case_id: testCase.id,
         prompt_version_id: promptId,
         model_used: selectedModel,
-        output_text: output
+        output_text: output,
+        variable_usage: variableUsage
       });
       if (outputError) throw outputError;
 
       const { error: testCaseError } = await supabase
         .from("test_cases")
-        .update({ generated_ai_output: output, prompt_version_id: promptId, model_used: selectedModel })
+        .update({ generated_ai_output: output, prompt_version_id: promptId, model_used: selectedModel, variable_usage: variableUsage })
         .eq("id", testCase.id)
         .eq("project_id", project_id);
       if (testCaseError) throw testCaseError;

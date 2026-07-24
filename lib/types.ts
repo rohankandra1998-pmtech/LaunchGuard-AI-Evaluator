@@ -7,6 +7,14 @@ export type Severity = "Low" | "Medium" | "High";
 export type TestCaseStatus = "draft" | "generated" | "reviewed";
 export type CaseType = "normal" | "edge" | "ambiguous" | "missing_context" | "adversarial" | "tone_sensitive";
 export type PromptVariableType = "text" | "long_text" | "number" | "boolean" | "select";
+export type VariableValueSource = "default" | "override" | "empty";
+
+export type VariableUsageEntry = {
+  source: VariableValueSource;
+  value: string | number | boolean | null;
+};
+
+export type VariableUsage = Record<string, VariableUsageEntry>;
 
 export type PromptVariable = {
   key: string;
@@ -73,6 +81,7 @@ export type TestCase = {
   user_input: string;
   case_type: CaseType | null;
   variable_values: Record<string, string | number | boolean | null>;
+  variable_usage: VariableUsage;
   generated_ai_output: string | null;
   prompt_version_id: string | null;
   model_used: string | null;

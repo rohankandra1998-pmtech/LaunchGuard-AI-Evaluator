@@ -71,6 +71,9 @@ create table public.test_cases (
   user_input text not null,
   case_type public.case_type,
   variable_values jsonb not null default '{}'::jsonb,
+  variable_usage jsonb not null default '{}'::jsonb
+    constraint test_cases_variable_usage_is_object
+    check (jsonb_typeof(variable_usage) = 'object'),
   expected_answer text,
   generated_ai_output text,
   prompt_version_id uuid references public.prompt_versions(id) on delete set null,
@@ -97,6 +100,9 @@ create table public.generated_outputs (
   prompt_version_id uuid references public.prompt_versions(id) on delete set null,
   model_used text not null check (model_used in ('gpt-4.1', 'gpt-5')),
   output_text text not null,
+  variable_usage jsonb not null default '{}'::jsonb
+    constraint generated_outputs_variable_usage_is_object
+    check (jsonb_typeof(variable_usage) = 'object'),
   created_at timestamptz not null default now()
 );
 
