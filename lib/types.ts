@@ -1,3 +1,5 @@
+import type { PromptVNextResponse } from "@/lib/ai/schemas";
+
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type RatingLabel = "Good" | "Average" | "Bad";
@@ -103,4 +105,35 @@ export type ErrorAnalysisReport = {
   prompt_version_id: string | null;
   summary: Record<string, unknown>;
   created_at: string;
+};
+
+export type PromptProposalDraft = {
+  id: string;
+  project_id: string;
+  source_prompt_version_id: string;
+  source_error_analysis_report_id: string;
+  source_prompt_snapshot: {
+    id: string;
+    version_number: number;
+    system_prompt: string;
+  };
+  source_report_snapshot: {
+    id: string;
+    summary: Record<string, unknown>;
+  };
+  proposal: PromptVNextResponse;
+  current_proposed_prompt: string;
+  failed_test_case_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PromptProposalResponse = {
+  draft_id: string;
+  source_prompt: PromptProposalDraft["source_prompt_snapshot"];
+  proposed_version_number: number;
+  source_report: PromptProposalDraft["source_report_snapshot"];
+  failed_test_case_count: number;
+  proposal: PromptVNextResponse;
+  current_proposed_prompt: string;
 };

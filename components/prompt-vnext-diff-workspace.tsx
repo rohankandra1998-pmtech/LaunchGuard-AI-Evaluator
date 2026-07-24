@@ -3,49 +3,39 @@
 import { forwardRef, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Pencil, RotateCcw, Save, Trash2 } from "lucide-react";
-import { savePromptDraft } from "@/app/actions";
+import { discardPromptProposalDraft, savePromptProposalAsVersion, updatePromptProposalDraft } from "@/app/actions";
 import { Badge } from "@/components/ui";
 import { errorAnalysisSchema, type PromptVNextResponse } from "@/lib/ai/schemas";
 import { createPromptDiff, type PromptDiffLine } from "@/lib/prompt-diff";
+import type { PromptProposalResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export type PromptVNextApiResponse = {
-  source_prompt: {
-    id: string;
-    version_number: number;
-    system_prompt: string;
-  };
-  proposed_version_number: number;
-  source_report: {
-    id: string;
-    summary: unknown;
-  };
-  failed_test_case_count: number;
-  proposal: PromptVNextResponse;
-};
-
 type PromptVNextDiffWorkspaceProps = {
-  data: PromptVNextApiResponse;
+  data: PromptProposalResponse;
   workspaceSlug: string;
   projectId: string;
-  onDiscard: () => void;
+  onProposalRemoved: () => void;
 };
 
 export function PromptVNextDiffWorkspace({
   data,
   workspaceSlug,
   projectId,
-  onDiscard
+  onProposalRemoved
 }: PromptVNextDiffWorkspaceProps) {
   const router = useRouter();
   const generatedText = data.proposal.improved_system_prompt;
-  const [proposedText, setProposedText] = useState(generatedText);
-  const [editingText, setEditingText] = useState(generatedText);
+  const [proposedText, setProposedText] = useState(data.current_proposed_prompt);
+  const [editingText, setEditingText] = useState(data.current_proposed_prompt);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedChangeId, setSelectedChangeId] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<"before" | "after">("after");
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [editingPending, startEditingTransition] = useTransition();
+  const [discardPending, startDiscardTransition] = useTransition();
   const [saving, startSaving] = useTransition();
+  const editInFlight = useRef(false);
+  const discardInFlight = useRef(false);
   const saveInFlight = useRef(false);
   const syncingScroll = useRef(false);
   const comparisonRef = useRef<HTMLElement>(null);
@@ -100,8 +90,22 @@ export function PromptVNextDiffWorkspace({
   }
 
   function discard() {
-    if (edited && !window.confirm("Discard this proposal and your unsaved edits?")) return;
-    onDiscard();
+    if ((edited || editingText !== proposedText) && !window.confirm("Discard this proposal and your unsaved edits?")) return;
+    if (discardPending || discardInFlight.current || saving || editingPending) return;
+    discardInFlight.current = true;
+    setPersistenceError(null);
+    const formData = proposalDraftFormData(data.draft_id, workspaceSlug, projectId);
+    startDiscardTransition(async () => {
+      try {
+        await discardPromptProposalDraft(formData);
+        onProposalRemoved();
+        router.refresh();
+      } catch {
+        setPersistenceError("The Prompt Proposal could not be discarded. Refresh the page and try again.");
+      } finally {
+        discardInFlight.current = false;
+      }
+    });
   }
 
   function beginEditing() {
@@ -111,36 +115,51 @@ export function PromptVNextDiffWorkspace({
   }
 
   function cancelEditing() {
-    setEditingText(generatedText);
-    setProposedText(generatedText);
+    setEditingText(proposedText);
     setIsEditing(false);
+    setPersistenceError(null);
   }
 
   function finishEditing() {
-    setProposedText(editingText);
-    setIsEditing(false);
+    if (editingPending || editInFlight.current || saving || discardPending) return;
+    if (!editingText.trim()) {
+      setPersistenceError("The proposed system prompt cannot be empty.");
+      return;
+    }
+    editInFlight.current = true;
+    setPersistenceError(null);
+    const formData = proposalDraftFormData(data.draft_id, workspaceSlug, projectId);
+    formData.set("system_prompt", editingText);
+    startEditingTransition(async () => {
+      try {
+        await updatePromptProposalDraft(formData);
+        setProposedText(editingText);
+        setIsEditing(false);
+        router.refresh();
+      } catch {
+        setPersistenceError("Changes could not be saved. Check that every configured placeholder is still present, then try again.");
+      } finally {
+        editInFlight.current = false;
+      }
+    });
   }
 
   function save() {
     if (saving || saveInFlight.current) return;
     if (!proposedText.trim()) {
-      setSaveError("The proposed system prompt cannot be empty.");
+      setPersistenceError("The proposed system prompt cannot be empty.");
       return;
     }
     saveInFlight.current = true;
-    setSaveError(null);
-    const formData = new FormData();
-    formData.set("workspace_slug", workspaceSlug);
-    formData.set("project_id", projectId);
-    formData.set("system_prompt", proposedText);
-    formData.set("change_summary", data.proposal.change_summary);
+    setPersistenceError(null);
+    const formData = proposalDraftFormData(data.draft_id, workspaceSlug, projectId);
     startSaving(async () => {
       try {
-        await savePromptDraft(formData);
-        onDiscard();
+        await savePromptProposalAsVersion(formData);
+        onProposalRemoved();
         router.refresh();
       } catch {
-        setSaveError("The prompt draft could not be saved. Check that all configured placeholders are still present, then try again.");
+        setPersistenceError("The Prompt Version could not be saved. Check that all configured placeholders are still present, then try again.");
       } finally {
         saveInFlight.current = false;
       }
@@ -216,8 +235,9 @@ export function PromptVNextDiffWorkspace({
                   id="proposed-prompt-editor"
                   value={editingText}
                   onChange={(event) => setEditingText(event.target.value)}
+                  disabled={editingPending}
                   spellCheck={false}
-                  className="focus-ring block h-[32rem] w-full resize-none overflow-auto border-0 bg-white p-4 font-mono text-xs leading-6 text-guard-ink"
+                  className="focus-ring block h-[32rem] w-full resize-none overflow-auto border-0 bg-white p-4 font-mono text-xs leading-6 text-guard-ink disabled:cursor-wait disabled:bg-guard-surfaceMuted"
                 />
               </div>
             ) : (
@@ -261,37 +281,50 @@ export function PromptVNextDiffWorkspace({
       </section>
 
       <div className="sticky bottom-4 z-30 rounded-xl border border-guard-line bg-white/95 p-4 shadow-floating backdrop-blur-sm">
-        {saveError ? <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red">{saveError}</p> : null}
+        {persistenceError ? <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-guard-redSoft p-3 text-sm text-guard-red">{persistenceError}</p> : null}
+        {editingPending || discardPending || saving ? (
+          <p aria-live="polite" className="mb-3 text-sm font-medium text-guard-muted">
+            {editingPending ? "Saving changesâ€¦" : discardPending ? "Discardingâ€¦" : "Saving prompt versionâ€¦"}
+          </p>
+        ) : null}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end" role="group" aria-label="Prompt proposal actions">
-          <button type="button" onClick={discard} disabled={saving} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-red hover:bg-guard-redSoft disabled:opacity-50">
+          <button type="button" onClick={discard} disabled={saving || editingPending || discardPending} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-red hover:bg-guard-redSoft disabled:opacity-50">
             <Trash2 aria-hidden="true" className="h-4 w-4" />
-            Discard proposal
+            {discardPending ? "Discardingâ€¦" : "Discard proposal"}
           </button>
           {isEditing ? (
             <>
-              <button type="button" onClick={cancelEditing} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted">
+              <button type="button" onClick={cancelEditing} disabled={editingPending || discardPending} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">
                 <RotateCcw aria-hidden="true" className="h-4 w-4" />
                 Cancel editing
               </button>
-              <button type="button" onClick={finishEditing} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-guard-primarySoft px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-surfaceStrong">
+              <button type="button" onClick={finishEditing} disabled={editingPending || discardPending} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-primaryLine bg-guard-primarySoft px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:bg-guard-surfaceStrong disabled:opacity-50">
                 <Check aria-hidden="true" className="h-4 w-4" />
-                Done editing
+                {editingPending ? "Saving changesâ€¦" : "Done editing"}
               </button>
             </>
           ) : (
-            <button type="button" onClick={beginEditing} disabled={saving} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">
+            <button type="button" onClick={beginEditing} disabled={saving || discardPending} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-text hover:bg-guard-surfaceMuted disabled:opacity-50">
               <Pencil aria-hidden="true" className="h-4 w-4" />
               Edit proposal
             </button>
           )}
-          <button type="button" onClick={save} disabled={saving || isEditing} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300">
+          <button type="button" onClick={save} disabled={saving || isEditing || discardPending || editingPending} className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg bg-guard-primary px-5 py-2 text-sm font-semibold text-white hover:bg-guard-primaryHover disabled:cursor-not-allowed disabled:bg-slate-300">
             <Save aria-hidden="true" className="h-4 w-4" />
-            {saving ? "Saving draft..." : "Save as next prompt version"}
+            {saving ? "Saving prompt versionâ€¦" : "Save as next prompt version"}
           </button>
         </div>
       </div>
     </section>
   );
+}
+
+function proposalDraftFormData(draftId: string, workspaceSlug: string, projectId: string) {
+  const formData = new FormData();
+  formData.set("draft_id", draftId);
+  formData.set("workspace_slug", workspaceSlug);
+  formData.set("project_id", projectId);
+  return formData;
 }
 
 function SummaryItem({ label, value, compact = false }: { label: string; value: string | number; compact?: boolean }) {

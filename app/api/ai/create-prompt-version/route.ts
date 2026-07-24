@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { promptVNextSchema } from "@/lib/ai/schemas";
 import { getNextPromptVersionNumber, getWorkspaceProject } from "@/lib/data";
 import { runStructuredOutput } from "@/lib/openai";
+import { promptProposalResponseSchema } from "@/lib/prompt-proposal-drafts";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -43,20 +44,57 @@ Only use pattern IDs, test-case IDs, and criterion names present in the supplied
 
     const proposedVersionNumber = await getNextPromptVersionNumber(supabase, project_id);
 
-    return NextResponse.json({
+    const sourcePromptSnapshot = {
+      id: prompt.id,
+      version_number: prompt.version_number,
+      system_prompt: prompt.system_prompt
+    };
+    const sourceReportSnapshot = {
+      id: report.id,
+      summary: report.summary
+    };
+    const { data: persistedDraft, error: persistenceError } = await supabase
+      .from("prompt_proposal_drafts")
+      .upsert(
+        {
+          project_id,
+          source_prompt_version_id: prompt.id,
+          source_error_analysis_report_id: report.id,
+          source_prompt_snapshot: sourcePromptSnapshot,
+          source_report_snapshot: sourceReportSnapshot,
+          proposal,
+          current_proposed_prompt: proposal.improved_system_prompt,
+          failed_test_case_count: failedExamples.length
+        },
+        { onConflict: "project_id" }
+      )
+      .select("id")
+      .single();
+    if (persistenceError || !persistedDraft) {
+      console.error("Prompt Proposal draft persistence failed", {
+        projectId: project_id,
+        promptVersionId: prompt.id,
+        reportId: report.id,
+        error: persistenceError
+      });
+      return NextResponse.json(
+        { error: "The Prompt Proposal was generated but could not be saved. Please retry." },
+        { status: 500 }
+      );
+    }
+
+    const response = promptProposalResponseSchema.parse({
+      draft_id: persistedDraft.id,
       source_prompt: {
-        id: prompt.id,
-        version_number: prompt.version_number,
-        system_prompt: prompt.system_prompt
+        ...sourcePromptSnapshot
       },
       proposed_version_number: proposedVersionNumber,
-      source_report: {
-        id: report.id,
-        summary: report.summary
-      },
+      source_report: sourceReportSnapshot,
       failed_test_case_count: failedExamples.length,
-      proposal
+      proposal,
+      current_proposed_prompt: proposal.improved_system_prompt
     });
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Prompt vNext generation failed", error);
     return NextResponse.json({ error: "Could not generate the Prompt vNext proposal. Please try again." }, { status: 500 });

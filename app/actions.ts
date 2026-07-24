@@ -9,7 +9,7 @@ import { getProductModel, getReasoningModel } from "@/lib/openai";
 import { revalidateProjectActivityPaths } from "@/lib/revalidation";
 import { assertPromptPlaceholdersConfigured, parseSerializedVariableSchema, validateVariableSchema } from "@/lib/prompt-variables";
 import { normalizeCriterionName, parseCriterionInput, type SuggestedCriterionInput } from "@/lib/criteria";
-import { generatedTestCasesSchema } from "@/lib/ai/schemas";
+import { generatedTestCasesSchema, promptVNextSchema } from "@/lib/ai/schemas";
 import { fetchAllTestCaseInputs, normalizeTestCaseInput, prepareSuggestionVariableValues, type PreparedGeneratedSuggestion } from "@/lib/test-cases";
 
 const caseTypes = new Set(["normal", "edge", "ambiguous", "missing_context", "adversarial", "tone_sensitive"]);
@@ -664,32 +664,100 @@ export async function saveHumanReview(formData: FormData) {
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/dataset");
 }
 
-export async function savePromptDraft(formData: FormData) {
+export async function updatePromptProposalDraft(formData: FormData) {
   const supabase = await createClient();
   const { workspaceSlug, projectId } = workspaceProjectFields(formData);
   await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const draftId = assertUuid(formString(formData, "draft_id"), "Prompt Proposal draft ID");
   const systemPrompt = formValue(formData, "system_prompt");
-  if (!systemPrompt.trim()) throw new Error("Improved system prompt is required.");
+  if (!systemPrompt.trim()) throw new Error("The proposed system prompt cannot be empty.");
 
-  const [{ data: latest, error: latestError }, { data: active, error: activeError }] = await Promise.all([
-    supabase.from("prompt_versions").select("version_number").eq("project_id", projectId).order("version_number", { ascending: false }).limit(1).single(),
-    supabase.from("prompt_versions").select("variable_schema").eq("project_id", projectId).eq("is_active", true).maybeSingle()
-  ]);
-  if (latestError) throw latestError;
-  if (activeError) throw activeError;
-  if (!active) throw new Error("Active prompt version not found.");
-  const variableSchema = validateVariableSchema(active.variable_schema);
+  const { data: draft, error: draftError } = await supabase
+    .from("prompt_proposal_drafts")
+    .select("id, source_prompt_version_id")
+    .eq("id", draftId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (draftError) throw draftError;
+  if (!draft) throw new Error("Prompt Proposal draft does not belong to this project.");
+
+  const { data: sourcePrompt, error: promptError } = await supabase
+    .from("prompt_versions")
+    .select("variable_schema")
+    .eq("id", draft.source_prompt_version_id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (promptError) throw promptError;
+  if (!sourcePrompt) throw new Error("The source Prompt Version is no longer available.");
+  const variableSchema = validateVariableSchema(sourcePrompt.variable_schema);
   assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
 
-  const { error } = await supabase.from("prompt_versions").insert({
-    project_id: projectId,
-    version_number: latest.version_number + 1,
-    system_prompt: systemPrompt,
-    variable_schema: variableSchema,
-    model_used: getProductModel(),
-    notes: formString(formData, "change_summary") || "Draft created from error analysis",
-    is_active: false
-  });
+  const { data: updated, error: updateError } = await supabase
+    .from("prompt_proposal_drafts")
+    .update({ current_proposed_prompt: systemPrompt })
+    .eq("id", draftId)
+    .eq("project_id", projectId)
+    .select("id")
+    .maybeSingle();
+  if (updateError) throw updateError;
+  if (!updated) throw new Error("Prompt Proposal draft could not be updated.");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/reports");
+}
+
+export async function discardPromptProposalDraft(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const draftId = assertUuid(formString(formData, "draft_id"), "Prompt Proposal draft ID");
+
+  const { data, error } = await supabase
+    .from("prompt_proposal_drafts")
+    .delete()
+    .eq("id", draftId)
+    .eq("project_id", projectId)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error("Prompt Proposal draft does not belong to this project or was already removed.");
+  revalidateProjectActivityPaths(workspaceSlug, projectId, "/reports");
+}
+
+export async function savePromptProposalAsVersion(formData: FormData) {
+  const supabase = await createClient();
+  const { workspaceSlug, projectId } = workspaceProjectFields(formData);
+  await requireWorkspaceProject(supabase, workspaceSlug, projectId);
+  const draftId = assertUuid(formString(formData, "draft_id"), "Prompt Proposal draft ID");
+
+  const { data: draft, error: draftError } = await supabase
+    .from("prompt_proposal_drafts")
+    .select("id, source_prompt_version_id, proposal, current_proposed_prompt")
+    .eq("id", draftId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (draftError) throw draftError;
+  if (!draft) throw new Error("Prompt Proposal draft does not belong to this project.");
+
+  promptVNextSchema.parse(draft.proposal);
+  const systemPrompt = String(draft.current_proposed_prompt || "");
+  if (!systemPrompt.trim()) throw new Error("The proposed system prompt cannot be empty.");
+  const { data: sourcePrompt, error: promptError } = await supabase
+    .from("prompt_versions")
+    .select("variable_schema")
+    .eq("id", draft.source_prompt_version_id)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (promptError) throw promptError;
+  if (!sourcePrompt) throw new Error("The source Prompt Version is no longer available.");
+  const variableSchema = validateVariableSchema(sourcePrompt.variable_schema);
+  assertPromptPlaceholdersConfigured(systemPrompt, variableSchema);
+
+  const { data: savedVersion, error: saveError } = await supabase.rpc("save_prompt_proposal_as_version", {
+    p_project_id: projectId,
+    p_draft_id: draftId,
+    p_model_used: getProductModel(),
+    p_fallback_notes: "Draft created from error analysis"
+  });
+  if (saveError) throw saveError;
+  if (!savedVersion?.length) throw new Error("The Prompt Proposal could not be saved as a Prompt Version.");
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts", "/reports");
 }
