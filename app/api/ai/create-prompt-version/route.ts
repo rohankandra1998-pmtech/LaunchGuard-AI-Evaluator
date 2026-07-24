@@ -21,6 +21,14 @@ type ReviewRow = Pick<HumanReview, "test_case_id" | "human_notes"> & {
   human_review_ratings: ReviewRatingRow[] | null;
 };
 type FailedRatingLabel = Exclude<RatingLabel, "Good">;
+type CriterionRow = Pick<
+  EvaluationCriterion,
+  "id" | "name" | "description" | "good_definition" | "average_definition" | "bad_definition" | "sort_order"
+>;
+type CompactEvaluationCriterion = Pick<
+  EvaluationCriterion,
+  "name" | "description" | "good_definition" | "average_definition" | "bad_definition"
+>;
 
 type ConfiguredVariable = {
   placeholder: string;
@@ -67,7 +75,12 @@ export async function POST(request: Request) {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      supabase.from("evaluation_criteria").select("*").eq("project_id", project_id).order("sort_order").order("created_at").order("id"),
+      supabase
+        .from("evaluation_criteria")
+        .select("id, name, description, good_definition, average_definition, bad_definition, sort_order")
+        .eq("project_id", project_id)
+        .order("sort_order")
+        .order("id"),
       supabase
         .from("human_reviews")
         .select("test_case_id, human_notes, human_review_ratings(criterion_id, rating_label, rating_score)")
@@ -82,7 +95,14 @@ export async function POST(request: Request) {
     if (!report) return NextResponse.json({ error: "Generate an Error Analysis report before creating Prompt vNext." }, { status: 404 });
 
     const currentPrompt = prompt as PromptRow;
-    const orderedCriteria = (criteria as EvaluationCriterion[] | null) || [];
+    const orderedCriteria = (criteria as CriterionRow[] | null) || [];
+    const compactEvaluationCriteria: CompactEvaluationCriterion[] = orderedCriteria.map((criterion) => ({
+      name: criterion.name,
+      description: criterion.description,
+      good_definition: criterion.good_definition,
+      average_definition: criterion.average_definition,
+      bad_definition: criterion.bad_definition
+    }));
     const reviewByCase = new Map(((reviews as ReviewRow[] | null) || []).map((review) => [review.test_case_id, review]));
     const configuredVariables: ConfiguredVariable[] = currentPrompt.variable_schema.map((variable) => ({
       placeholder: `{{${variable.key}}}`,
@@ -128,6 +148,8 @@ export async function POST(request: Request) {
 
 Ground every change in the Error Analysis recommendations, failure patterns, evidence examples, evaluation criteria, failed human-reviewed examples, current system prompt, and configured variables. For structured reports, use recommended_prompt_changes and each exact_prompt_instruction as the primary guidance. For legacy reports, treat the available failure, root-cause, improvement, rule, and example sections as equivalent guidance.
 
+Treat all supplied evaluation criteria as behavioral guardrails and preserve behavior that already satisfies them. Ground material prompt modifications primarily in the Error Analysis and failed examples; the mere existence of a criterion is not sufficient reason to add unrelated instructions. Do not invent or alter criterion names or definitions.
+
 Preserve the product intent, preserve every supplied configured placeholder exactly as written, preserve unrelated correct instructions, and avoid silently deleting useful instructions. Configured variable descriptions and defaults provide context only: never rename a placeholder or replace it with a hardcoded default value. Resolve contradictions instead of stacking conflicting rules. Return the entire improved prompt, not a patch.
 
 Represent every material modification with one change_annotations entry. Consolidate annotations that describe the same underlying modification and do not create separate annotations for trivial wording edits. Each before_text must be a short, smallest-useful contiguous excerpt copied verbatim from current_system_prompt. Each after_text must be copied verbatim from improved_system_prompt. Never paraphrase excerpts. Use null before_text only for entirely new content and null after_text only for removed content.
@@ -138,7 +160,7 @@ Only use pattern IDs, test-case IDs, and criterion names present in the supplied
         configured_variables: configuredVariables,
         error_analysis_summary: report.summary,
         failed_examples: compactFailedExamples,
-        evaluation_criteria: orderedCriteria
+        evaluation_criteria: compactEvaluationCriteria
       }, null, 2)
     });
 
