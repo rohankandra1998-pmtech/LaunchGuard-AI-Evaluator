@@ -74,7 +74,7 @@ export default async function WorkspacesPage() {
             <li aria-current="page">Workspaces</li>
           </ol>
         </nav>
-        <div className="flex items-start justify-between gap-8">
+        <div className="flex flex-col items-start gap-5 lg:flex-row lg:justify-between lg:gap-8">
           <div className="max-w-2xl">
             <h1 className="text-4xl font-semibold tracking-[-0.035em] text-guard-ink sm:text-5xl">Your Workspaces</h1>
             <p className="mt-4 text-sm leading-6 text-guard-text sm:text-base">
