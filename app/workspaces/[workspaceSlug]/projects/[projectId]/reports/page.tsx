@@ -14,18 +14,27 @@ export default async function ReportsPage({ params }: { params: Promise<{ worksp
     getNextPromptVersionNumber(supabase, projectId)
   ]);
   let initialDraft: PromptProposalResponse | null = null;
-  let initialDraftError: { draftId: string | null; message: string } | null = null;
+  let initialDraftError: { draftId: string | null; kind: "unavailable" | "invalid"; message: string } | null = null;
   if (draftError) {
-    console.error("Prompt Proposal draft load failed", { workspaceSlug, projectId, error: draftError });
+    const schemaUnavailable = draftError.code === "PGRST205" || draftError.code === "42P01";
+    console.warn("Prompt Proposal draft load unavailable", {
+      workspaceSlug,
+      projectId,
+      code: draftError.code,
+      message: draftError.message
+    });
     initialDraftError = {
       draftId: null,
-      message: "The saved Prompt Proposal could not be loaded. Refresh the page or try again later."
+      kind: "unavailable",
+      message: schemaUnavailable
+        ? "Prompt Proposal storage is not ready. Apply supabase/migrations/20260723120000_prompt_proposal_drafts.sql, then refresh this page."
+        : "Prompt Proposal storage is temporarily unavailable. Refresh the page or try again later."
     };
   } else if (draftRow) {
     try {
       initialDraft = toPromptProposalResponse(draftRow, proposedVersionNumber);
     } catch (error) {
-      console.error("Stored Prompt Proposal draft is invalid", {
+      console.warn("Stored Prompt Proposal draft is invalid", {
         workspaceSlug,
         projectId,
         draftId: typeof draftRow.id === "string" ? draftRow.id : null,
@@ -33,6 +42,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ worksp
       });
       initialDraftError = {
         draftId: typeof draftRow.id === "string" ? draftRow.id : null,
+        kind: "invalid",
         message: "This saved Prompt Proposal is unusable because its stored data is invalid. Discard it and create a new proposal."
       };
     }

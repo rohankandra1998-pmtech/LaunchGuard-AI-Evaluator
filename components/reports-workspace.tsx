@@ -10,7 +10,11 @@ import { errorAnalysisSchema, type ErrorAnalysisResponse } from "@/lib/ai/schema
 import { promptProposalResponseSchema } from "@/lib/prompt-proposal-drafts";
 import type { ErrorAnalysisReport, PromptProposalResponse } from "@/lib/types";
 
-type InitialDraftError = { draftId: string | null; message: string };
+type InitialDraftError = {
+  draftId: string | null;
+  kind: "unavailable" | "invalid";
+  message: string;
+};
 
 export function ReportsWorkspace({
   workspaceSlug,
@@ -173,8 +177,8 @@ export function ReportsWorkspace({
   }
 
   const latest = reports[0];
-  const proposalStageActive = proposalPending || Boolean(draft) || Boolean(draftLoadError);
-  const showPromptProposalAction = Boolean(latest) && !analysisPending && !proposalStageActive;
+  const proposalStageActive = proposalPending || Boolean(draft) || draftLoadError?.kind === "invalid";
+  const showPromptProposalAction = Boolean(latest) && !analysisPending && !proposalStageActive && !draftLoadError;
   const sourceReport = draft
     ? reports.find((report) => report.id === draft.source_report.id) ?? latest
     : latest;
@@ -286,25 +290,6 @@ export function ReportsWorkspace({
               </Card>
             ) : null}
             {proposalError ? <p role="alert" className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
-            {draftLoadError ? (
-              <Card className="border-red-200 bg-guard-redSoft">
-                <div role="alert">
-                  <h2 className="font-semibold text-guard-red">Saved Prompt Proposal unavailable</h2>
-                  <p className="mt-2 text-sm leading-6 text-guard-red">{draftLoadError.message}</p>
-                </div>
-                {draftLoadError.draftId ? (
-                  <button
-                    type="button"
-                    onClick={discardInvalidDraft}
-                    disabled={invalidDraftDiscardPending}
-                    className="focus-ring mt-4 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-guard-red hover:bg-red-50 disabled:opacity-50"
-                  >
-                    <Trash2 aria-hidden="true" className="h-4 w-4" />
-                    {invalidDraftDiscardPending ? "Discardingâ€¦" : "Discard unusable proposal"}
-                  </button>
-                ) : null}
-              </Card>
-            ) : null}
             {proposalPending ? <ProposalGenerationState /> : null}
             {draft ? (
               <PromptVNextDiffWorkspace
@@ -319,6 +304,28 @@ export function ReportsWorkspace({
             ) : null}
           </>
         )}
+
+      {draftLoadError ? (
+        <Card className="border-red-200 bg-guard-redSoft">
+          <div role="alert">
+            <h2 className="font-semibold text-guard-red">
+              {draftLoadError.kind === "invalid" ? "Saved Prompt Proposal unavailable" : "Prompt Proposal storage unavailable"}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-guard-red">{draftLoadError.message}</p>
+          </div>
+          {draftLoadError.kind === "invalid" && draftLoadError.draftId ? (
+            <button
+              type="button"
+              onClick={discardInvalidDraft}
+              disabled={invalidDraftDiscardPending}
+              className="focus-ring mt-4 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-guard-red hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+              {invalidDraftDiscardPending ? "Discardingâ€¦" : "Discard unusable proposal"}
+            </button>
+          ) : null}
+        </Card>
+      ) : null}
 
       <div>
         <Card>
