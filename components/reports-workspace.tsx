@@ -5,10 +5,16 @@ import { useRouter } from "next/navigation";
 import { Check, CheckCircle2, ChevronDown, ChevronUp, EllipsisVertical, LoaderCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { deleteErrorAnalysisReport, discardPromptProposalDraft } from "@/app/actions";
 import { PromptVNextDiffWorkspace } from "@/components/prompt-vnext-diff-workspace";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState } from "@/components/ui";
 import { errorAnalysisSchema, type ErrorAnalysisResponse } from "@/lib/ai/schemas";
+import { projectPath } from "@/lib/data";
+import {
+  resolveErrorAnalysisWorkflow,
+  type ErrorAnalysisWorkflowState,
+  type WorkflowStepState
+} from "@/lib/error-analysis-workflow";
 import { promptProposalResponseSchema } from "@/lib/prompt-proposal-drafts";
-import type { ErrorAnalysisReport, PromptProposalResponse } from "@/lib/types";
+import type { ErrorAnalysisReport, PromptProposalResponse, SavedPromptVersion } from "@/lib/types";
 
 type InitialDraftError = {
   draftId: string | null;
@@ -21,19 +27,23 @@ export function ReportsWorkspace({
   projectId,
   reports,
   initialDraft,
-  initialDraftError
+  initialDraftError,
+  initialSavedVersion
 }: {
   workspaceSlug: string;
   projectId: string;
   reports: ErrorAnalysisReport[];
   initialDraft: PromptProposalResponse | null;
   initialDraftError: InitialDraftError | null;
+  initialSavedVersion: SavedPromptVersion | null;
 }) {
   const router = useRouter();
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [draft, setDraft] = useState<PromptProposalResponse | null>(initialDraft);
   const [draftLoadError, setDraftLoadError] = useState<InitialDraftError | null>(initialDraftError);
+  const [savedVersion, setSavedVersion] = useState<SavedPromptVersion | null>(initialSavedVersion);
+  const [savePending, setSavePending] = useState(false);
   const [analysisPending, startAnalysisTransition] = useTransition();
   const [proposalPending, startProposalTransition] = useTransition();
   const [analysisExpanded, setAnalysisExpanded] = useState(false);
@@ -50,11 +60,13 @@ export function ReportsWorkspace({
   const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const deleteInFlightRef = useRef(false);
   const historyHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const completionHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     setDraft(initialDraft);
     setDraftLoadError(initialDraftError);
-  }, [initialDraft, initialDraftError]);
+    setSavedVersion(initialSavedVersion);
+  }, [initialDraft, initialDraftError, initialSavedVersion]);
 
   function summarize() {
     if (analysisPending) return;
@@ -177,8 +189,23 @@ export function ReportsWorkspace({
   }
 
   const latest = reports[0];
-  const proposalStageActive = proposalPending || Boolean(draft) || draftLoadError?.kind === "invalid";
-  const showPromptProposalAction = Boolean(latest) && !analysisPending && !proposalStageActive && !draftLoadError;
+  const invalidDraftPendingResolution = draftLoadError?.kind === "invalid";
+  const proposalWorkspaceActive = proposalPending || Boolean(draft) || invalidDraftPendingResolution;
+  const workflowState = resolveErrorAnalysisWorkflow({
+    hasReport: Boolean(latest),
+    analysisPending,
+    proposalPending,
+    hasDraft: Boolean(draft),
+    invalidDraftPendingResolution,
+    savePending,
+    hasSavedVersion: Boolean(savedVersion)
+  });
+  const showPromptProposalAction = Boolean(latest)
+    && !analysisPending
+    && !proposalWorkspaceActive
+    && !draftLoadError
+    && !savedVersion
+    && !savePending;
   const sourceReport = draft
     ? reports.find((report) => report.id === draft.source_report.id) ?? latest
     : latest;
@@ -204,13 +231,18 @@ export function ReportsWorkspace({
   return (
     <>
       <div className={`space-y-6 ${showPromptProposalAction ? "pb-48 sm:pb-32" : ""}`}>
-        <ErrorAnalysisProgress
-          hasReport={Boolean(latest)}
-          analysisPending={analysisPending}
-          proposalStageActive={proposalStageActive}
-        />
+        <ErrorAnalysisProgress state={workflowState} />
 
-        {!proposalStageActive ? (
+        {analysisError ? <p role="alert" className="rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{analysisError}</p> : null}
+
+        {savedVersion && !analysisPending ? (
+          <CompletedWorkflowCard
+            savedVersion={savedVersion}
+            promptsHref={projectPath(workspaceSlug, projectId, "/prompts")}
+            headingRef={completionHeadingRef}
+            onRunNewAnalysis={requestNewAnalysis}
+          />
+        ) : !proposalWorkspaceActive ? (
           <Card>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -238,7 +270,6 @@ export function ReportsWorkspace({
                     : "Run Error Analysis"}
               </button>
             </div>
-            {analysisError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{analysisError}</p> : null}
             {proposalError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
             <div className="mt-6">
               {analysisPending
@@ -300,6 +331,13 @@ export function ReportsWorkspace({
                 data={draft}
                 workspaceSlug={workspaceSlug}
                 projectId={projectId}
+                onSavingChange={setSavePending}
+                onProposalSaved={(newSavedVersion) => {
+                  setAnalysisExpanded(false);
+                  setDraft(null);
+                  setSavedVersion(newSavedVersion);
+                  requestAnimationFrame(() => completionHeadingRef.current?.focus());
+                }}
                 onProposalRemoved={() => {
                   setAnalysisExpanded(false);
                   setDraft(null);
@@ -399,8 +437,6 @@ export function ReportsWorkspace({
   );
 }
 
-type WorkflowStepState = "completed" | "ready" | "inProgress" | "upcoming";
-
 const workflowStatusText: Record<WorkflowStepState, string> = {
   completed: "Completed",
   ready: "Ready",
@@ -408,25 +444,11 @@ const workflowStatusText: Record<WorkflowStepState, string> = {
   upcoming: "Upcoming"
 };
 
-function ErrorAnalysisProgress({
-  hasReport,
-  analysisPending,
-  proposalStageActive
-}: {
-  hasReport: boolean;
-  analysisPending: boolean;
-  proposalStageActive: boolean;
-}) {
-  const analysisStepState: WorkflowStepState = analysisPending ? "inProgress" : hasReport ? "completed" : "ready";
-  const proposalStepState: WorkflowStepState = proposalStageActive
-    ? "inProgress"
-    : hasReport && !analysisPending
-      ? "ready"
-      : "upcoming";
+function ErrorAnalysisProgress({ state }: { state: ErrorAnalysisWorkflowState }) {
   const steps: Array<{ label: string; state: WorkflowStepState }> = [
-    { label: "Run analysis", state: analysisStepState },
-    { label: "Review proposal", state: proposalStepState },
-    { label: "Save next version", state: "upcoming" }
+    { label: "Run analysis", state: state.analysis },
+    { label: "Review proposal", state: state.proposal },
+    { label: "Save next version", state: state.save }
   ];
 
   return (
@@ -462,7 +484,7 @@ function ErrorAnalysisProgress({
               <span
                 aria-hidden="true"
                 className={`absolute bottom-0 left-[1.0625rem] top-9 border-l-2 md:bottom-auto md:left-9 md:right-0 md:top-[1.0625rem] md:border-l-0 md:border-t-2 ${
-                  step.state === "completed" && (steps[index + 1].state === "ready" || steps[index + 1].state === "inProgress")
+                  step.state === "completed" && steps[index + 1].state !== "upcoming"
                     ? "border-guard-primary"
                     : "border-guard-lineStrong"
                 }`}
@@ -472,6 +494,54 @@ function ErrorAnalysisProgress({
         ))}
       </ol>
     </nav>
+  );
+}
+
+function CompletedWorkflowCard({
+  savedVersion,
+  promptsHref,
+  headingRef,
+  onRunNewAnalysis
+}: {
+  savedVersion: SavedPromptVersion;
+  promptsHref: string;
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
+  onRunNewAnalysis: (opener: HTMLButtonElement) => void;
+}) {
+  return (
+    <Card className="border-guard-primaryLine bg-guard-primarySoft/40">
+      <section role="status" aria-live="polite" aria-labelledby="completed-workflow-heading">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <span aria-hidden="true" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-guard-greenSoft text-guard-green">
+            <CheckCircle2 className="h-6 w-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2
+              ref={headingRef}
+              id="completed-workflow-heading"
+              tabIndex={-1}
+              className="focus-ring rounded-sm text-xl font-semibold tracking-tight text-guard-ink"
+            >
+              Prompt version v{savedVersion.versionNumber} created
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-guard-text">
+              The proposed system prompt was successfully saved as v{savedVersion.versionNumber}. It is currently inactive until you activate it.
+            </p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <ButtonLink href={promptsHref}>Go to Prompt Versions</ButtonLink>
+              <button
+                type="button"
+                onClick={(event) => onRunNewAnalysis(event.currentTarget)}
+                className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-guard-lineStrong bg-white px-4 py-2 text-sm font-semibold text-guard-primaryHover hover:border-guard-primaryLine hover:bg-guard-primarySoft"
+              >
+                <RefreshCw aria-hidden="true" className="h-4 w-4" />
+                Run New Analysis
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </Card>
   );
 }
 

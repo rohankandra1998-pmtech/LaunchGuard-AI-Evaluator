@@ -57,8 +57,15 @@ export type PromptVersion = {
   model_used: string;
   notes: string | null;
   is_active: boolean;
+  source_prompt_version_id: string | null;
+  source_error_analysis_report_id: string | null;
   variable_schema: PromptVariable[];
   created_at: string;
+};
+
+export type SavedPromptVersion = {
+  id: string;
+  versionNumber: number;
 };
 
 export type EvaluationCriterion = {

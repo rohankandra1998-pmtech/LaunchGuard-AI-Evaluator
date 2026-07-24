@@ -40,6 +40,8 @@ create table public.prompt_versions (
   model_used text not null default 'gpt-4.1' check (model_used in ('gpt-4.1', 'gpt-5')),
   notes text,
   is_active boolean not null default false,
+  source_prompt_version_id uuid references public.prompt_versions(id) on delete set null,
+  source_error_analysis_report_id uuid,
   variable_schema jsonb not null default '[]'::jsonb
     constraint prompt_versions_variable_schema_is_array
     check (jsonb_typeof(variable_schema) = 'array'),
@@ -134,6 +136,12 @@ create table public.error_analysis_reports (
   created_at timestamptz not null default now()
 );
 
+alter table public.prompt_versions
+  add constraint prompt_versions_source_error_analysis_report_id_fkey
+  foreign key (source_error_analysis_report_id)
+  references public.error_analysis_reports(id)
+  on delete set null;
+
 create table public.prompt_proposal_drafts (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -164,6 +172,8 @@ create index projects_workspace_active_updated_idx on public.projects(workspace_
 create index projects_workspace_trashed_at_idx on public.projects(workspace_id, trashed_at desc) where trashed_at is not null;
 create index projects_trashed_at_idx on public.projects(trashed_at) where trashed_at is not null;
 create index prompt_versions_project_created_idx on public.prompt_versions(project_id, created_at desc);
+create index prompt_versions_source_prompt_idx on public.prompt_versions(source_prompt_version_id) where source_prompt_version_id is not null;
+create index prompt_versions_source_error_report_idx on public.prompt_versions(source_error_analysis_report_id) where source_error_analysis_report_id is not null;
 create index evaluation_criteria_project_created_idx on public.evaluation_criteria(project_id, created_at desc);
 create index evaluation_criteria_project_sort_order_idx on public.evaluation_criteria(project_id, sort_order, created_at, id);
 create index test_cases_project_status_idx on public.test_cases(project_id, status, created_at desc);
@@ -385,14 +395,26 @@ as $$
 declare
   draft_prompt text;
   draft_proposal jsonb;
+  draft_source_prompt_version_id uuid;
+  draft_source_error_analysis_report_id uuid;
   source_variable_schema jsonb;
   next_version_number integer;
   new_prompt_version_id uuid;
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_project_id::text, 0));
 
-  select draft.current_proposed_prompt, draft.proposal, source_prompt.variable_schema
-  into draft_prompt, draft_proposal, source_variable_schema
+  select
+    draft.current_proposed_prompt,
+    draft.proposal,
+    draft.source_prompt_version_id,
+    draft.source_error_analysis_report_id,
+    source_prompt.variable_schema
+  into
+    draft_prompt,
+    draft_proposal,
+    draft_source_prompt_version_id,
+    draft_source_error_analysis_report_id,
+    source_variable_schema
   from public.prompt_proposal_drafts as draft
   join public.prompt_versions as source_prompt
     on source_prompt.id = draft.source_prompt_version_id
@@ -416,7 +438,9 @@ begin
     model_used,
     notes,
     is_active,
-    variable_schema
+    variable_schema,
+    source_prompt_version_id,
+    source_error_analysis_report_id
   )
   values (
     p_project_id,
@@ -425,7 +449,9 @@ begin
     p_model_used,
     coalesce(nullif(btrim(draft_proposal ->> 'change_summary'), ''), p_fallback_notes),
     false,
-    source_variable_schema
+    source_variable_schema,
+    draft_source_prompt_version_id,
+    draft_source_error_analysis_report_id
   )
   returning id into new_prompt_version_id;
 

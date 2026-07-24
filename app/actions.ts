@@ -759,5 +759,14 @@ export async function savePromptProposalAsVersion(formData: FormData) {
   });
   if (saveError) throw saveError;
   if (!savedVersion?.length) throw new Error("The Prompt Proposal could not be saved as a Prompt Version.");
+  const savedPromptVersionId = assertUuid(savedVersion[0]?.saved_prompt_version_id, "Saved Prompt Version ID");
+  const savedVersionNumber = savedVersion[0]?.saved_version_number;
+  if (typeof savedVersionNumber !== "number" || !Number.isInteger(savedVersionNumber) || savedVersionNumber < 1) {
+    throw new Error("Saved Prompt Version number is invalid.");
+  }
   revalidateProjectActivityPaths(workspaceSlug, projectId, "/prompts", "/reports");
+  return {
+    id: savedPromptVersionId,
+    versionNumber: savedVersionNumber
+  };
 }

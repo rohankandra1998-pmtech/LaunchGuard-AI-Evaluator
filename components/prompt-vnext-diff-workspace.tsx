@@ -7,13 +7,15 @@ import { discardPromptProposalDraft, savePromptProposalAsVersion, updatePromptPr
 import { Badge } from "@/components/ui";
 import { errorAnalysisSchema, type PromptVNextResponse } from "@/lib/ai/schemas";
 import { createPromptDiff, type PromptDiffLine } from "@/lib/prompt-diff";
-import type { PromptProposalResponse } from "@/lib/types";
+import type { PromptProposalResponse, SavedPromptVersion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type PromptVNextDiffWorkspaceProps = {
   data: PromptProposalResponse;
   workspaceSlug: string;
   projectId: string;
+  onSavingChange: (saving: boolean) => void;
+  onProposalSaved: (savedVersion: SavedPromptVersion) => void;
   onProposalRemoved: () => void;
 };
 
@@ -21,6 +23,8 @@ export function PromptVNextDiffWorkspace({
   data,
   workspaceSlug,
   projectId,
+  onSavingChange,
+  onProposalSaved,
   onProposalRemoved
 }: PromptVNextDiffWorkspaceProps) {
   const router = useRouter();
@@ -151,17 +155,19 @@ export function PromptVNextDiffWorkspace({
       return;
     }
     saveInFlight.current = true;
+    onSavingChange(true);
     setPersistenceError(null);
     const formData = proposalDraftFormData(data.draft_id, workspaceSlug, projectId);
     startSaving(async () => {
       try {
-        await savePromptProposalAsVersion(formData);
-        onProposalRemoved();
+        const savedVersion = await savePromptProposalAsVersion(formData);
+        onProposalSaved(savedVersion);
         router.refresh();
       } catch {
         setPersistenceError("The Prompt Version could not be saved. Check that all configured placeholders are still present, then try again.");
       } finally {
         saveInFlight.current = false;
+        onSavingChange(false);
       }
     });
   }
