@@ -53,7 +53,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ worksp
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/criteria")}>Suggest Criteria</ButtonLink>
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/dataset")}>Generate Starter Test Set</ButtonLink>
             <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/dataset")}>Review AI Outputs</ButtonLink>
-            <ButtonLink variant="secondary" href={projectPath(workspaceSlug, projectId, "/results")}>View Results</ButtonLink>
           </div>
         </Card>
       </div>

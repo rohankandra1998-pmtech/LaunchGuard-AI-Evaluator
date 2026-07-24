@@ -9,7 +9,7 @@ The product is organized as:
 1. Public workspace directory.
 2. Individual public workspace.
 3. AI evaluation projects inside each workspace.
-4. Prompt versions, criteria, a unified Golden Dataset and human-review workspace, results, reports, and CSV export inside each project.
+4. Prompt versions, criteria, a unified Golden Dataset and human-review workspace, reports, and CSV export inside each project.
 
 This prototype has no authentication, ownership roles, invitations, private workspaces, request quotas, or usage caps. All workspaces and project data are publicly readable and publicly editable through the publishable Supabase key.
 
@@ -61,7 +61,7 @@ The schema explicitly grants Data API access to `anon` and `authenticated`, enab
 
 ## Existing Supabase Project Migration
 
-Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, `supabase/migrations/20260716120000_project_trash_retention.sql`, `supabase/migrations/20260717221000_prompt_version_variable_schema.sql`, and `supabase/migrations/20260719233000_evaluation_criteria_sort_order.sql`.
+Back up the database before applying any production migration. Existing account-based installations must first run `supabase/migrations/20260711214913_public_workspaces.sql`, then apply every later committed migration in timestamp order: `supabase/migrations/20260715223000_propagate_project_activity.sql`, `supabase/migrations/20260716120000_project_trash_retention.sql`, `supabase/migrations/20260717221000_prompt_version_variable_schema.sql`, `supabase/migrations/20260719233000_evaluation_criteria_sort_order.sql`, and `supabase/migrations/20260723120000_prompt_proposal_drafts.sql`.
 
 The migration:
 
@@ -79,7 +79,7 @@ For a repository linked with the Supabase CLI, apply committed migrations with:
 npx supabase db push
 ```
 
-For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration, the prompt-variable migration must follow Trash retention, and the Evaluation Criteria ordering migration must run last. That final migration adds project-scoped `sort_order`, backfills existing criteria in their previous `created_at` order with `id` as a deterministic tie-breaker, and installs the atomic reorder function. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
+For a project managed through the dashboard, paste each unapplied migration into the SQL Editor and run it once in timestamp order. The project-activity timestamp migration must be applied before the Trash-retention migration, the prompt-variable migration must follow Trash retention, the Evaluation Criteria ordering migration must follow that, and the Prompt Proposal drafts migration must run last. The criteria migration adds project-scoped `sort_order`, backfills existing criteria in their previous `created_at` order with `id` as a deterministic tie-breaker, and installs the atomic reorder function. The final migration persists one reviewable Prompt Proposal draft per project until it is explicitly discarded or saved as a Prompt Version. The retention migration enables `pg_cron`; Supabase Cron must be available for the daily cleanup schedule to be created. The legacy `profiles` table may remain for historical data, but the application does not query it or depend on Supabase Auth.
 
 ## Project Trash Lifecycle
 
@@ -155,7 +155,6 @@ npm run build
 - `/workspaces/[workspaceSlug]/projects/[projectId]/criteria`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/dataset` - primary test-case, output-generation, and human-review workflow
 - `/workspaces/[workspaceSlug]/projects/[projectId]/review` - backward-compatible server redirect to `/dataset`
-- `/workspaces/[workspaceSlug]/projects/[projectId]/results`
 - `/workspaces/[workspaceSlug]/projects/[projectId]/reports`
 
 ## Server API Routes

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Beaker, ClipboardCheck, Database, LineChart, MessageSquareText, Sparkles } from "lucide-react";
+import { Beaker, ClipboardCheck, Database, MessageSquareText, Sparkles } from "lucide-react";
 import { projectPath } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,6 @@ const items = [
   ["Prompt Versions", "/prompts", MessageSquareText],
   ["Evaluation Criteria", "/criteria", ClipboardCheck],
   ["Golden Dataset", "/dataset", Database],
-  ["Results", "/results", LineChart],
   ["Error Analysis", "/reports", Sparkles]
 ] as const;
 

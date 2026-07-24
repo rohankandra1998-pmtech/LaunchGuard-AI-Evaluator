@@ -40,6 +40,8 @@ create table public.prompt_versions (
   model_used text not null default 'gpt-4.1' check (model_used in ('gpt-4.1', 'gpt-5')),
   notes text,
   is_active boolean not null default false,
+  source_prompt_version_id uuid references public.prompt_versions(id) on delete set null,
+  source_error_analysis_report_id uuid,
   variable_schema jsonb not null default '[]'::jsonb
     constraint prompt_versions_variable_schema_is_array
     check (jsonb_typeof(variable_schema) = 'array'),
@@ -71,6 +73,9 @@ create table public.test_cases (
   user_input text not null,
   case_type public.case_type,
   variable_values jsonb not null default '{}'::jsonb,
+  variable_usage jsonb not null default '{}'::jsonb
+    constraint test_cases_variable_usage_is_object
+    check (jsonb_typeof(variable_usage) = 'object'),
   expected_answer text,
   generated_ai_output text,
   prompt_version_id uuid references public.prompt_versions(id) on delete set null,
@@ -97,6 +102,9 @@ create table public.generated_outputs (
   prompt_version_id uuid references public.prompt_versions(id) on delete set null,
   model_used text not null check (model_used in ('gpt-4.1', 'gpt-5')),
   output_text text not null,
+  variable_usage jsonb not null default '{}'::jsonb
+    constraint generated_outputs_variable_usage_is_object
+    check (jsonb_typeof(variable_usage) = 'object'),
   created_at timestamptz not null default now()
 );
 
@@ -128,11 +136,44 @@ create table public.error_analysis_reports (
   created_at timestamptz not null default now()
 );
 
+alter table public.prompt_versions
+  add constraint prompt_versions_source_error_analysis_report_id_fkey
+  foreign key (source_error_analysis_report_id)
+  references public.error_analysis_reports(id)
+  on delete set null;
+
+create table public.prompt_proposal_drafts (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  source_prompt_version_id uuid not null references public.prompt_versions(id) on delete cascade,
+  source_error_analysis_report_id uuid not null references public.error_analysis_reports(id) on delete cascade,
+  source_prompt_snapshot jsonb not null
+    constraint prompt_proposal_drafts_source_prompt_snapshot_is_object
+    check (jsonb_typeof(source_prompt_snapshot) = 'object'),
+  source_report_snapshot jsonb not null
+    constraint prompt_proposal_drafts_source_report_snapshot_is_object
+    check (jsonb_typeof(source_report_snapshot) = 'object'),
+  proposal jsonb not null
+    constraint prompt_proposal_drafts_proposal_is_object
+    check (jsonb_typeof(proposal) = 'object'),
+  current_proposed_prompt text not null
+    constraint prompt_proposal_drafts_current_prompt_not_blank
+    check (length(btrim(current_proposed_prompt)) > 0),
+  failed_test_case_count integer not null default 0
+    constraint prompt_proposal_drafts_failed_count_nonnegative
+    check (failed_test_case_count >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint prompt_proposal_drafts_one_per_project unique (project_id)
+);
+
 create index projects_workspace_updated_idx on public.projects(workspace_id, updated_at desc);
 create index projects_workspace_active_updated_idx on public.projects(workspace_id, updated_at desc) where trashed_at is null;
 create index projects_workspace_trashed_at_idx on public.projects(workspace_id, trashed_at desc) where trashed_at is not null;
 create index projects_trashed_at_idx on public.projects(trashed_at) where trashed_at is not null;
 create index prompt_versions_project_created_idx on public.prompt_versions(project_id, created_at desc);
+create index prompt_versions_source_prompt_idx on public.prompt_versions(source_prompt_version_id) where source_prompt_version_id is not null;
+create index prompt_versions_source_error_report_idx on public.prompt_versions(source_error_analysis_report_id) where source_error_analysis_report_id is not null;
 create index evaluation_criteria_project_created_idx on public.evaluation_criteria(project_id, created_at desc);
 create index evaluation_criteria_project_sort_order_idx on public.evaluation_criteria(project_id, sort_order, created_at, id);
 create index test_cases_project_status_idx on public.test_cases(project_id, status, created_at desc);
@@ -148,6 +189,8 @@ create index human_review_ratings_review_idx on public.human_review_ratings(revi
 create index human_review_ratings_criterion_idx on public.human_review_ratings(criterion_id);
 create index error_reports_project_created_idx on public.error_analysis_reports(project_id, created_at desc);
 create index error_reports_prompt_version_idx on public.error_analysis_reports(prompt_version_id) where prompt_version_id is not null;
+create index prompt_proposal_drafts_source_prompt_idx on public.prompt_proposal_drafts(source_prompt_version_id);
+create index prompt_proposal_drafts_source_report_idx on public.prompt_proposal_drafts(source_error_analysis_report_id);
 
 create or replace function public.touch_updated_at()
 returns trigger
@@ -338,6 +381,91 @@ begin
 end;
 $$;
 
+create or replace function public.save_prompt_proposal_as_version(
+  p_project_id uuid,
+  p_draft_id uuid,
+  p_model_used text,
+  p_fallback_notes text
+)
+returns table(saved_prompt_version_id uuid, saved_version_number integer)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  draft_prompt text;
+  draft_proposal jsonb;
+  draft_source_prompt_version_id uuid;
+  draft_source_error_analysis_report_id uuid;
+  source_variable_schema jsonb;
+  next_version_number integer;
+  new_prompt_version_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_project_id::text, 0));
+
+  select
+    draft.current_proposed_prompt,
+    draft.proposal,
+    draft.source_prompt_version_id,
+    draft.source_error_analysis_report_id,
+    source_prompt.variable_schema
+  into
+    draft_prompt,
+    draft_proposal,
+    draft_source_prompt_version_id,
+    draft_source_error_analysis_report_id,
+    source_variable_schema
+  from public.prompt_proposal_drafts as draft
+  join public.prompt_versions as source_prompt
+    on source_prompt.id = draft.source_prompt_version_id
+   and source_prompt.project_id = draft.project_id
+  where draft.id = p_draft_id
+    and draft.project_id = p_project_id;
+
+  if not found then
+    raise exception 'Prompt Proposal draft does not belong to this project.' using errcode = 'P0002';
+  end if;
+
+  select coalesce(max(prompt_version.version_number), 0) + 1
+  into next_version_number
+  from public.prompt_versions as prompt_version
+  where prompt_version.project_id = p_project_id;
+
+  insert into public.prompt_versions (
+    project_id,
+    version_number,
+    system_prompt,
+    model_used,
+    notes,
+    is_active,
+    variable_schema,
+    source_prompt_version_id,
+    source_error_analysis_report_id
+  )
+  values (
+    p_project_id,
+    next_version_number,
+    draft_prompt,
+    p_model_used,
+    coalesce(nullif(btrim(draft_proposal ->> 'change_summary'), ''), p_fallback_notes),
+    false,
+    source_variable_schema,
+    draft_source_prompt_version_id,
+    draft_source_error_analysis_report_id
+  )
+  returning id into new_prompt_version_id;
+
+  delete from public.prompt_proposal_drafts
+  where id = p_draft_id
+    and project_id = p_project_id;
+
+  return query select new_prompt_version_id, next_version_number;
+end;
+$$;
+
+revoke execute on function public.save_prompt_proposal_as_version(uuid, uuid, text, text) from public;
+grant execute on function public.save_prompt_proposal_as_version(uuid, uuid, text, text) to anon, authenticated;
+
 create or replace function public.set_workspace_slug()
 returns trigger
 language plpgsql
@@ -379,6 +507,10 @@ create trigger touch_criteria_updated_at before update on public.evaluation_crit
 drop trigger if exists touch_test_cases_updated_at on public.test_cases;
 create trigger touch_test_cases_updated_at before update on public.test_cases for each row execute function public.touch_updated_at();
 
+drop trigger if exists touch_prompt_proposal_drafts_updated_at on public.prompt_proposal_drafts;
+create trigger touch_prompt_proposal_drafts_updated_at before update on public.prompt_proposal_drafts
+for each row execute function public.touch_updated_at();
+
 drop trigger if exists touch_workspace_from_project_activity on public.projects;
 create trigger touch_workspace_from_project_activity
 after insert or update or delete on public.projects
@@ -419,6 +551,11 @@ create trigger touch_project_from_error_analysis_reports_activity
 after insert or update or delete on public.error_analysis_reports
 for each row execute function public.touch_project_from_child_activity();
 
+drop trigger if exists touch_project_from_prompt_proposal_drafts_activity on public.prompt_proposal_drafts;
+create trigger touch_project_from_prompt_proposal_drafts_activity
+after insert or update or delete on public.prompt_proposal_drafts
+for each row execute function public.touch_project_from_child_activity();
+
 drop trigger if exists touch_project_from_review_rating_activity on public.human_review_ratings;
 create trigger touch_project_from_review_rating_activity
 after insert or update or delete on public.human_review_ratings
@@ -434,6 +571,7 @@ alter table public.generated_outputs enable row level security;
 alter table public.human_reviews enable row level security;
 alter table public.human_review_ratings enable row level security;
 alter table public.error_analysis_reports enable row level security;
+alter table public.prompt_proposal_drafts enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on table
@@ -446,7 +584,8 @@ grant select, insert, update, delete on table
   public.generated_outputs,
   public.human_reviews,
   public.human_review_ratings,
-  public.error_analysis_reports
+  public.error_analysis_reports,
+  public.prompt_proposal_drafts
 to anon, authenticated;
 
 create policy "public collaborative access" on public.workspaces for all to anon, authenticated using (true) with check (true);
@@ -459,3 +598,4 @@ create policy "public collaborative access" on public.generated_outputs for all 
 create policy "public collaborative access" on public.human_reviews for all to anon, authenticated using (true) with check (true);
 create policy "public collaborative access" on public.human_review_ratings for all to anon, authenticated using (true) with check (true);
 create policy "public collaborative access" on public.error_analysis_reports for all to anon, authenticated using (true) with check (true);
+create policy "public collaborative access" on public.prompt_proposal_drafts for all to anon, authenticated using (true) with check (true);
