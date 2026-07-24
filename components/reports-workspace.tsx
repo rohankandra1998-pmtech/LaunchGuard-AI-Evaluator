@@ -241,7 +241,11 @@ export function ReportsWorkspace({
             {analysisError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{analysisError}</p> : null}
             {proposalError ? <p role="alert" className="mt-4 rounded-md border border-guard-red/30 bg-guard-red/10 p-3 text-sm text-guard-red">{proposalError}</p> : null}
             <div className="mt-6">
-              {latest ? <ReportBlock report={latest} /> : <EmptyState title="No reports yet">Run error analysis after completing human reviews.</EmptyState>}
+              {analysisPending
+                ? <AnalysisGenerationState />
+                : latest
+                  ? <ReportBlock report={latest} />
+                  : <EmptyState title="No reports yet">Run error analysis after completing human reviews.</EmptyState>}
             </div>
           </Card>
         ) : (
@@ -541,17 +545,46 @@ function AnalysisSummaryCard({
 function ProposalGenerationState() {
   return (
     <Card className="border-guard-primaryLine bg-guard-surfaceMuted">
-      <div aria-live="polite" className="flex flex-col items-center py-8 text-center">
-        <span className="rounded-full bg-white p-3 text-guard-primary shadow-card">
-          <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none" />
-        </span>
-        <h2 className="mt-4 text-lg font-semibold text-guard-ink">Generating Prompt Proposal…</h2>
-        <p className="mt-2 text-sm text-guard-muted">Grounding changes in the latest reviewed failures and current prompt.</p>
-        <div aria-hidden="true" className="mt-6 h-2 w-full max-w-lg overflow-hidden rounded-full bg-white">
-          <div className="starter-progress-indicator h-full w-1/3 rounded-full bg-guard-primary" />
-        </div>
-      </div>
+      <GenerationStateContent
+        title="Generating Prompt Proposal…"
+        description="Grounding changes in the latest reviewed failures and current prompt."
+      />
     </Card>
+  );
+}
+
+function AnalysisGenerationState() {
+  return (
+    <div className="rounded-xl border border-guard-primaryLine bg-guard-surfaceMuted px-4 sm:px-6">
+      <GenerationStateContent
+        title="Generating Error Analysis…"
+        description="Reviewing failed and average test cases to identify patterns and root causes."
+        headingLevel="h3"
+      />
+    </div>
+  );
+}
+
+function GenerationStateContent({
+  title,
+  description,
+  headingLevel: Heading = "h2"
+}: {
+  title: string;
+  description: string;
+  headingLevel?: "h2" | "h3";
+}) {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true" className="flex flex-col items-center py-8 text-center">
+      <span className="rounded-full bg-white p-3 text-guard-primary shadow-card">
+        <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none" />
+      </span>
+      <Heading className="mt-4 text-lg font-semibold text-guard-ink">{title}</Heading>
+      <p className="mt-2 text-sm text-guard-muted">{description}</p>
+      <div aria-hidden="true" className="mt-6 h-2 w-full max-w-lg overflow-hidden rounded-full bg-white">
+        <div className="starter-progress-indicator h-full w-1/3 rounded-full bg-guard-primary" />
+      </div>
+    </div>
   );
 }
 

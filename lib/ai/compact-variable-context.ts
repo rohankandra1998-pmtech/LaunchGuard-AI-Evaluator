@@ -39,17 +39,38 @@ function isResolvedValue(value: unknown): value is VariableContextValue {
   return value === null || isRuntimeValue(value);
 }
 
+function resolvedValueFromUsageEntry(entry: unknown): VariableContextValue | undefined {
+  if (!isRecord(entry) || !Object.hasOwn(entry, "source") || !Object.hasOwn(entry, "value")) {
+    return undefined;
+  }
+  if ((entry.source === "default" || entry.source === "override") && isRuntimeValue(entry.value)) {
+    return entry.value;
+  }
+  if (entry.source === "empty" && entry.value === null) {
+    return null;
+  }
+  return undefined;
+}
+
 function legacyFallback(
   variableSchema: readonly VariableSchemaEntry[],
+  variableUsage: unknown,
   variableValues: unknown
 ): LegacyFallbackVariableContext {
+  const usage = isRecord(variableUsage) ? variableUsage : {};
   const values = isRecord(variableValues) ? variableValues : {};
   const resolvedValues: Record<string, VariableContextValue> = {};
   const configuredKeys = new Set(variableSchema.map((variable) => variable.key));
 
   for (const variable of variableSchema) {
-    const value = values[variable.key];
-    if (isResolvedValue(value)) resolvedValues[variable.key] = value;
+    const usageValue = resolvedValueFromUsageEntry(usage[variable.key]);
+    if (usageValue !== undefined) {
+      resolvedValues[variable.key] = usageValue;
+      continue;
+    }
+
+    const legacyValue = values[variable.key];
+    if (isResolvedValue(legacyValue)) resolvedValues[variable.key] = legacyValue;
   }
 
   // Legacy rows may predate the active schema. Preserve safe historical values
@@ -82,7 +103,7 @@ export function compactVariableContext(
   variableValues: unknown
 ): CompactVariableContext {
   if (!isRecord(variableUsage) || Object.keys(variableUsage).length === 0) {
-    return legacyFallback(variableSchema, variableValues);
+    return legacyFallback(variableSchema, variableUsage, variableValues);
   }
 
   const configuredKeys = new Set(variableSchema.map((variable) => variable.key));
@@ -90,7 +111,7 @@ export function compactVariableContext(
     configuredKeys.size !== variableSchema.length
     || Object.keys(variableUsage).some((key) => !configuredKeys.has(key))
   ) {
-    return legacyFallback(variableSchema, variableValues);
+    return legacyFallback(variableSchema, variableUsage, variableValues);
   }
 
   const overrides: RuntimeVariableContext["overrides"] = {};
@@ -99,10 +120,14 @@ export function compactVariableContext(
   for (const variable of variableSchema) {
     const usageEntry = variableUsage[variable.key];
     if (!isRecord(usageEntry) || !Object.hasOwn(usageEntry, "source") || !Object.hasOwn(usageEntry, "value")) {
-      return legacyFallback(variableSchema, variableValues);
+      return legacyFallback(variableSchema, variableUsage, variableValues);
     }
 
-    if (usageEntry.source === "default" && isRuntimeValue(usageEntry.value)) {
+    if (
+      usageEntry.source === "default"
+      && isRuntimeValue(usageEntry.value)
+      && Object.is(usageEntry.value, variable.default_value)
+    ) {
       continue;
     }
     if (usageEntry.source === "override" && isRuntimeValue(usageEntry.value)) {
@@ -114,7 +139,7 @@ export function compactVariableContext(
       continue;
     }
 
-    return legacyFallback(variableSchema, variableValues);
+    return legacyFallback(variableSchema, variableUsage, variableValues);
   }
 
   return {
