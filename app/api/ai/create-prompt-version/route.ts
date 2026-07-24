@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  compactVariableContext,
+  configuredVariablesFromSchema,
+  type CompactVariableContext,
+  type ConfiguredVariableContext
+} from "@/lib/ai/compact-variable-context";
 import { promptVNextSchema } from "@/lib/ai/schemas";
 import { getNextPromptVersionNumber, getWorkspaceProject } from "@/lib/data";
 import { runStructuredOutput } from "@/lib/openai";
@@ -8,14 +14,13 @@ import type {
   EvaluationCriterion,
   HumanReview,
   HumanReviewRating,
-  PromptVariable,
   PromptVersion,
   RatingLabel,
   TestCase
 } from "@/lib/types";
 
 type PromptRow = Pick<PromptVersion, "id" | "version_number" | "system_prompt" | "variable_schema">;
-type TestCaseRow = Pick<TestCase, "id" | "user_input" | "case_type" | "variable_values" | "generated_ai_output">;
+type TestCaseRow = Pick<TestCase, "id" | "user_input" | "case_type" | "variable_values" | "variable_usage" | "generated_ai_output">;
 type ReviewRatingRow = Pick<HumanReviewRating, "criterion_id" | "rating_label" | "rating_score">;
 type ReviewRow = Pick<HumanReview, "test_case_id" | "human_notes"> & {
   human_review_ratings: ReviewRatingRow[] | null;
@@ -30,17 +35,11 @@ type CompactEvaluationCriterion = Pick<
   "name" | "description" | "good_definition" | "average_definition" | "bad_definition"
 >;
 
-type ConfiguredVariable = {
-  placeholder: string;
-  description: PromptVariable["description"];
-  default_value: PromptVariable["default_value"];
-};
-
 type CompactFailedExample = {
   test_case_id: string;
   user_input: string;
   case_type: TestCase["case_type"];
-  variable_values: TestCase["variable_values"];
+  variable_context: CompactVariableContext;
   ai_output: string | null;
   human_notes: string | null;
   failed_ratings: Array<{
@@ -87,7 +86,7 @@ export async function POST(request: Request) {
         .eq("project_id", project_id),
       supabase
         .from("test_cases")
-        .select("id, user_input, case_type, variable_values, generated_ai_output")
+        .select("id, user_input, case_type, variable_values, variable_usage, generated_ai_output")
         .eq("project_id", project_id)
         .eq("status", "reviewed")
     ]);
@@ -104,11 +103,7 @@ export async function POST(request: Request) {
       bad_definition: criterion.bad_definition
     }));
     const reviewByCase = new Map(((reviews as ReviewRow[] | null) || []).map((review) => [review.test_case_id, review]));
-    const configuredVariables: ConfiguredVariable[] = currentPrompt.variable_schema.map((variable) => ({
-      placeholder: `{{${variable.key}}}`,
-      description: variable.description,
-      default_value: variable.default_value
-    }));
+    const configuredVariables: ConfiguredVariableContext[] = configuredVariablesFromSchema(currentPrompt.variable_schema);
     const compactFailedExamples: CompactFailedExample[] = ((testCases as TestCaseRow[] | null) || []).flatMap((testCase) => {
       const review = reviewByCase.get(testCase.id);
       const ratings = review?.human_review_ratings || [];
@@ -124,7 +119,11 @@ export async function POST(request: Request) {
         test_case_id: testCase.id,
         user_input: testCase.user_input,
         case_type: testCase.case_type,
-        variable_values: testCase.variable_values,
+        variable_context: compactVariableContext(
+          currentPrompt.variable_schema,
+          testCase.variable_usage,
+          testCase.variable_values
+        ),
         ai_output: testCase.generated_ai_output,
         human_notes: review.human_notes,
         failed_ratings: orderedResolvedRatings.flatMap(({ criterion, rating }) => {
@@ -150,7 +149,11 @@ Ground every change in the Error Analysis recommendations, failure patterns, evi
 
 Treat all supplied evaluation criteria as behavioral guardrails and preserve behavior that already satisfies them. Ground material prompt modifications primarily in the Error Analysis and failed examples; the mere existence of a criterion is not sufficient reason to add unrelated instructions. Do not invent or alter criterion names or definitions.
 
-Preserve the product intent, preserve every supplied configured placeholder exactly as written, preserve unrelated correct instructions, and avoid silently deleting useful instructions. Configured variable descriptions and defaults provide context only: never rename a placeholder or replace it with a hardcoded default value. Resolve contradictions instead of stacking conflicting rules. Return the entire improved prompt, not a patch.
+Preserve the product intent, preserve every supplied configured placeholder exactly as written, preserve unrelated correct instructions, and avoid silently deleting useful instructions. Configured variable descriptions and defaults are shared baseline context only: never rename a placeholder, omit one, or replace it with a hardcoded default value.
+
+Interpret each failed example's variable_context using its provenance. For runtime provenance, uses_default_context true means no custom override was supplied, even when empty_variables is non-empty; overrides replace configured defaults only for that case; and empty_variables were empty at runtime. For legacy_fallback provenance, resolved_values contains the full available runtime context because reliable provenance was unavailable. Treat custom overrides as case-specific evidence, never as global defaults. A failure using only baseline defaults may support a general prompt improvement when the Error Analysis evidence warrants it. Distinguish baseline, override, and missing-context failures when deciding what to change.
+
+Resolve contradictions instead of stacking conflicting rules. Return the entire improved prompt, not a patch.
 
 Represent every material modification with one change_annotations entry. Consolidate annotations that describe the same underlying modification and do not create separate annotations for trivial wording edits. Each before_text must be a short, smallest-useful contiguous excerpt copied verbatim from current_system_prompt. Each after_text must be copied verbatim from improved_system_prompt. Never paraphrase excerpts. Use null before_text only for entirely new content and null after_text only for removed content.
 

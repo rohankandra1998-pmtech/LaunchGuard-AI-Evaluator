@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  compactVariableContext,
+  configuredVariablesFromSchema,
+  type CompactVariableContext
+} from "@/lib/ai/compact-variable-context";
 import { errorAnalysisSchema } from "@/lib/ai/schemas";
 import { getWorkspaceProject } from "@/lib/data";
 import { runStructuredOutput } from "@/lib/openai";
@@ -17,7 +22,7 @@ type ReviewRow = Pick<HumanReview, "test_case_id" | "human_notes"> & {
   human_review_ratings: ReviewRatingRow[] | null;
 };
 
-type TestCaseRow = Pick<TestCase, "id" | "user_input" | "case_type" | "variable_values" | "generated_ai_output">;
+type TestCaseRow = Pick<TestCase, "id" | "user_input" | "case_type" | "variable_values" | "variable_usage" | "generated_ai_output">;
 type PromptRow = Pick<PromptVersion, "id" | "system_prompt" | "variable_schema">;
 type FailedRatingLabel = Exclude<RatingLabel, "Good">;
 
@@ -35,7 +40,7 @@ type ReviewedFailureContext = {
   test_case_id: string;
   user_input: string;
   case_type: TestCase["case_type"];
-  variable_values: TestCase["variable_values"];
+  variable_context: CompactVariableContext;
   generated_ai_output: TestCase["generated_ai_output"];
   human_notes: string | null;
   failed_criteria: FailedCriterionContext[];
@@ -73,6 +78,10 @@ Evidence:
 Grounding:
 - Only Average and Bad criteria are failures. Good is the target, Average is the partial-success boundary, and Bad is unacceptable.
 - Do not infer failures for omitted criteria. Human ratings are the source of truth, human notes are supporting evidence, and every claim must be supported by supplied cases.
+- Treat configured_variables defaults as shared baseline context for every failure.
+- In variable_context, provenance "runtime" means stored generation-time provenance was available. uses_default_context true means the case supplied no custom overrides, even when empty_variables is non-empty. overrides replace the corresponding configured defaults only for that case, and empty_variables were empty at runtime.
+- provenance "legacy_fallback" means reliable runtime provenance was unavailable; resolved_values contains the full available runtime context for that case.
+- Distinguish failures under baseline defaults from failures associated with case-specific overrides or empty context. Do not generalize an override into a configured default.
 `.trim();
 
 export async function POST(request: Request) {
@@ -96,7 +105,7 @@ export async function POST(request: Request) {
         .eq("project_id", project_id),
       supabase
         .from("test_cases")
-        .select("id, user_input, case_type, variable_values, generated_ai_output")
+        .select("id, user_input, case_type, variable_values, variable_usage, generated_ai_output")
         .eq("project_id", project_id)
         .eq("status", "reviewed")
     ]);
@@ -138,7 +147,11 @@ export async function POST(request: Request) {
         test_case_id: testCase.id,
         user_input: testCase.user_input,
         case_type: testCase.case_type,
-        variable_values: testCase.variable_values,
+        variable_context: compactVariableContext(
+          currentPrompt.variable_schema,
+          testCase.variable_usage,
+          testCase.variable_values
+        ),
         generated_ai_output: testCase.generated_ai_output,
         human_notes: review.human_notes,
         failed_criteria: failedCriteria
@@ -152,7 +165,15 @@ export async function POST(request: Request) {
       schemaName: "error_analysis",
       schema: errorAnalysisSchema,
       instructions: ERROR_ANALYSIS_INSTRUCTIONS,
-      input: JSON.stringify({ project: context.project, current_prompt: currentPrompt, reviewed_failures: reviewedFailureContexts }, null, 2)
+      input: JSON.stringify({
+        project: context.project,
+        current_prompt: {
+          id: currentPrompt.id,
+          system_prompt: currentPrompt.system_prompt
+        },
+        configured_variables: configuredVariablesFromSchema(currentPrompt.variable_schema),
+        reviewed_failures: reviewedFailureContexts
+      }, null, 2)
     });
     const { data: report, error } = await supabase
       .from("error_analysis_reports")
