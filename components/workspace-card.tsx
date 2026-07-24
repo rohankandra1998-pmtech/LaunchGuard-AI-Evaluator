@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Building2 } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, Building2, CircleCheck, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type WorkspaceViewModel = {
@@ -21,15 +21,20 @@ export function WorkspaceCard({
   workspace: WorkspaceViewModel;
   view: "grid" | "list";
 }) {
+  const workspaceStats = [
+    { label: "Projects", value: workspace.projectCount, icon: BriefcaseBusiness },
+    { label: "Test Cases", value: workspace.testCaseCount, icon: Code2 },
+    { label: "Reviewed", value: workspace.reviewedCount, icon: CircleCheck }
+  ];
+
   const stats = (
     <dl className={cn("grid grid-cols-3 gap-3 border-t border-guard-line pt-4", view === "list" && "min-w-72 border-l border-t-0 pl-6 pt-0")}>
-      {[
-        ["Projects", workspace.projectCount],
-        ["Test Cases", workspace.testCaseCount],
-        ["Reviewed", workspace.reviewedCount]
-      ].map(([label, value]) => (
+      {workspaceStats.map(({ label, value, icon: Icon }) => (
         <div key={label}>
-          <dt className="text-xs text-guard-muted">{label}</dt>
+          <dt className="flex items-center gap-1.5 whitespace-nowrap text-xs text-guard-muted">
+            <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-guard-primary" />
+            {label}
+          </dt>
           <dd className="mt-1 text-sm font-semibold text-guard-ink">{value}</dd>
         </div>
       ))}
